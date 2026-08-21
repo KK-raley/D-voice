@@ -46,7 +46,7 @@ Vocalis is under active development. This document tracks what is shipping next.
 ## Community Requests
 
 Want to influence the roadmap? Open a
-[discussion](https://github.com/vocalis-ai/vocalis/discussions) or vote on
+[discussion](https://github.com/KK-raley/D-voice/discussions) or vote on
 existing ones — top-voted items get pulled into the next milestone.
 
 ## Maintenance Commitment

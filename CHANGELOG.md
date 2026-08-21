@@ -51,6 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI (`vocalis enroll|gate|speak|run|ask|serve|agents|status`), examples,
   tests, CI pipeline, and full documentation.
 
-[Unreleased]: https://github.com/vocalis-ai/vocalis/compare/v0.1.1...HEAD
-[0.1.1]: https://github.com/vocalis-ai/vocalis/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/vocalis-ai/vocalis/releases/tag/v0.1.0
+[Unreleased]: https://github.com/KK-raley/D-voice/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/KK-raley/D-voice/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/KK-raley/D-voice/releases/tag/v0.1.0

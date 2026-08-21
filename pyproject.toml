@@ -70,11 +70,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/vocalis-ai/vocalis"
-Repository = "https://github.com/vocalis-ai/vocalis"
-Documentation = "https://github.com/vocalis-ai/vocalis/tree/main/docs"
-Changelog = "https://github.com/vocalis-ai/vocalis/blob/main/CHANGELOG.md"
-Issues = "https://github.com/vocalis-ai/vocalis/issues"
+Homepage = "https://github.com/KK-raley/D-voice"
+Repository = "https://github.com/KK-raley/D-voice"
+Documentation = "https://github.com/KK-raley/D-voice/tree/main/docs"
+Changelog = "https://github.com/KK-raley/D-voice/blob/main/CHANGELOG.md"
+Issues = "https://github.com/KK-raley/D-voice/issues"
 
 [project.scripts]
 vocalis = "vocalis.cli:app"

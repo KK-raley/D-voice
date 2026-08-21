@@ -10,13 +10,12 @@ A voice-first, local-first agent ecosystem that **only obeys you**, speaks agent
 output aloud in a voice you tune yourself, and narrates what your AI workforce
 is doing — in real time.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/vocalis-ai/vocalis/ci.yml?branch=main&logo=github&label=CI)](https://github.com/vocalis-ai/vocalis/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/vocalis-voice-agent?color=22d3ee&logo=pypi)](https://pypi.org/project/vocalis-voice-agent/)
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](https://pypi.org/project/vocalis-voice-agent/)
+[![CI](https://img.shields.io/github/actions/workflow/status/KK-raley/D-voice/ci.yml?branch=main&logo=github&label=CI)](https://github.com/KK-raley/D-voice/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](https://github.com/KK-raley/D-voice)
 [![License: MIT](https://img.shields.io/badge/license-MIT-818cf8.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![Discussions](https://img.shields.io/github/discussions/vocalis-ai/vocalis?color=34d399&logo=github)](https://github.com/vocalis-ai/vocalis/discussions)
-[![Maintenance](https://img.shields.io/maintenance/yes/2027?color=34d399)](https://github.com/vocalis-ai/vocalis/graphs/commit-activity)
+[![Discussions](https://img.shields.io/github/discussions/KK-raley/D-voice?color=34d399&logo=github)](https://github.com/KK-raley/D-voice/discussions)
+[![Maintenance](https://img.shields.io/maintenance/yes/2027?color=34d399)](https://github.com/KK-raley/D-voice/graphs/commit-activity)
 
 [Quick start](#-quick-start) · [Architecture](#-architecture) · [How it works](#-how-it-works) · [Showcase](SHOWCASE.md) · [Roadmap](ROADMAP.md) · [Maintenance](MAINTENANCE.md) · [Contributing](CONTRIBUTING.md)
 
@@ -218,6 +217,6 @@ pass offline; keep new dependencies justified.
 
 **"Sometimes you gotta run before you can walk."** — build your D-VOICE today.
 
-Made with 🎙️ + 🧠 · [Discussions](https://github.com/vocalis-ai/vocalis/discussions) · [Issues](https://github.com/vocalis-ai/vocalis/issues)
+Made with 🎙️ + 🧠 · [Discussions](https://github.com/KK-raley/D-voice/discussions) · [Issues](https://github.com/KK-raley/D-voice/issues)
 
 </div>

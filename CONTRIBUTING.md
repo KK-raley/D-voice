@@ -6,7 +6,7 @@ wanted a **D-VOICE of their own**. This guide will get you merged fast.
 ## Getting started
 
 ```bash
-git clone https://github.com/vocalis-ai/vocalis.git
+git clone https://github.com/KK-raley/D-voice.git
 cd vocalis
 
 # Python backend (editable + all extras)
@@ -67,4 +67,4 @@ tests/              pytest suite (offline-friendly)
 
 ## Questions?
 
-Open a [discussion](https://github.com/vocalis-ai/vocalis/discussions) - we reply within 72 hours.
+Open a [discussion](https://github.com/KK-raley/D-voice/discussions) - we reply within 72 hours.
