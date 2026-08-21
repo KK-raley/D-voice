@@ -1,7 +1,7 @@
 # Contributing to Vocalis
 
 Thanks for considering a contribution - Vocalis is built in the open, for everyone who has ever
-wanted a **JARVIS of their own**. This guide will get you merged fast.
+wanted a **D-VOICE of their own**. This guide will get you merged fast.
 
 ## Getting started
 
@@ -20,7 +20,7 @@ cd ui && npm install && npm run dev
 ### Recommended local model
 
 ```bash
-ollama pull qwen2.5:3b-instruct   # Jarvis brain
+ollama pull qwen2.5:3b-instruct   # D-VOICE brain
 ```
 
 ## Development workflow
@@ -38,7 +38,7 @@ ollama pull qwen2.5:3b-instruct   # Jarvis brain
 vocalis/            Python package
   voice/            VoiceGate, ASR, TTS, audio IO
   agents/           Connector base + echo/claude-code/openai
-  jarvis/           Brain (local LLM), monitor, commander
+  dvoice/           Brain (local LLM), monitor, commander
   notify/           Completion notifications
   server/           FastAPI + event bus
 ui/                 React HUD (Vite + TS)

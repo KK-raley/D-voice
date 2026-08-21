@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { api } from "../api";
 
 interface Msg {
-  who: "user" | "jarvis";
+  who: "user" | "dvoice";
   text: string;
 }
 
@@ -14,7 +14,7 @@ const SUGGESTIONS = [
 
 export default function ChatPanel() {
   const [msgs, setMsgs] = useState<Msg[]>([
-    { who: "jarvis", text: "JARVIS online. 所有子系统就绪，等待您的指令。" },
+    { who: "dvoice", text: "D-VOICE online. 所有子系统就绪，等待您的指令。" },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,9 +35,9 @@ export default function ChatPanel() {
         resp.reply ||
         resp.spoken ||
         (resp.kind === "task" ? "任务已派发，进度见 HUD 与 Feed。" : "已处理。");
-      setMsgs((m) => [...m, { who: "jarvis", text: reply }]);
+      setMsgs((m) => [...m, { who: "dvoice", text: reply }]);
     } catch (e) {
-      setMsgs((m) => [...m, { who: "jarvis", text: `指令通道错误：${String(e)}` }]);
+      setMsgs((m) => [...m, { who: "dvoice", text: `指令通道错误：${String(e)}` }]);
     } finally {
       setBusy(false);
       requestAnimationFrame(() => listRef.current?.scrollTo(0, 1e6));
@@ -46,12 +46,12 @@ export default function ChatPanel() {
 
   return (
     <div className="panel">
-      <h2>JARVIS Console</h2>
+      <h2>D-VOICE Console</h2>
       <div className="chat">
         <div className="msgs" ref={listRef}>
           {msgs.map((m, i) => (
             <div className={`msg ${m.who}`} key={i}>
-              <div className="who">{m.who === "user" ? "YOU" : "JARVIS"}</div>
+              <div className="who">{m.who === "user" ? "YOU" : "D-VOICE"}</div>
               {m.text}
             </div>
           ))}
@@ -78,7 +78,7 @@ export default function ChatPanel() {
         <div className="composer">
           <input
             value={input}
-            placeholder={busy ? "JARVIS 处理中…" : "说点什么，或下达指令（回车发送）"}
+            placeholder={busy ? "D-VOICE 处理中…" : "说点什么，或下达指令（回车发送）"}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send(input)}
             disabled={busy}

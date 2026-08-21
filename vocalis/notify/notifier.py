@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from vocalis.server.events import EventBus, EventType, bus
@@ -36,6 +37,7 @@ class Notifier:
         summary = {
             "completed": f"Done. {agent} finished: {instruction}.",
             "failed": f"{agent} failed: {getattr(task, 'error', 'unknown error')}",
+            "stalled": f"{agent} stalled: {instruction}",
         }.get(status, f"{agent}: {status}")
 
         await self.bus.publish(EventType.SYSTEM, level="notify", message=summary)
@@ -44,7 +46,7 @@ class Notifier:
                 await self.tts.speak(
                     f"{CHIME_TEXT.get(status, '')} {summary}",
                     profile_name=self.profile,
-                    play=True,
+                    play=True,  # speak() offloads playback to a worker thread
                 )
             except Exception:
                 pass
@@ -63,12 +65,17 @@ class Notifier:
             MessageBeep()
         except Exception:
             pass
-        try:  # macOS
+        try:  # macOS (json.dumps escapes quotes/newlines safely)
             if sys.platform == "darwin":
                 import subprocess
 
+                safe_title = json.dumps(title)
+                safe_msg = json.dumps(message)
                 subprocess.run(
-                    ["osascript", "-e", f'display notification "{message}" with title "{title}"'],
+                    [
+                        "osascript", "-e",
+                        f"display notification {safe_msg} with title {safe_title}",
+                    ],
                     check=False,
                 )
                 return

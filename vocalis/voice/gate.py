@@ -6,12 +6,15 @@ enrolled centroids with cosine similarity; below-threshold utterances are
 rejected as "unknown speaker" before they ever reach an LLM or agent.
 
 Voiceprints are personal biometric data. They are stored only under
-``~/.vocalis/profiles/`` and never leave the machine.
+``~/.vocalis/profiles/`` with owner-only permissions (0600) and never
+leave the machine.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +25,16 @@ from vocalis.config import VocalisConfig, profiles_dir
 from vocalis.voice.speaker import cosine_similarity, embed_utterance
 
 PROFILE_EXT = ".voiceprofile.json"
+_VALID_USER = re.compile(r"[\w.-]{1,64}")
+
+
+def _safe_username(user: str) -> str:
+    """Reject path traversal / weird names before they touch the filesystem."""
+    if not _VALID_USER.fullmatch(user):
+        raise ValueError(
+            f"invalid username {user!r}: use 1-64 chars of letters/digits/._- only"
+        )
+    return user
 
 
 @dataclass
@@ -72,14 +85,19 @@ class VoiceGate:
     # ------------------------------------------------------------------
     # Enrollment
     # ------------------------------------------------------------------
-    def enroll(self, user: str, utterances: list[np.ndarray]) -> dict[str, Any]:
+    def enroll(
+        self, user: str, utterances: list[np.ndarray], sample_rate: int = 16000
+    ) -> dict[str, Any]:
         """Create (or refresh) a voice profile from N calibration utterances."""
+        _safe_username(user)
         if len(utterances) < self.config.voice_gate.min_enroll_utterances:
             raise ValueError(
                 f"need >= {self.config.voice_gate.min_enroll_utterances} utterances, "
                 f"got {len(utterances)}"
             )
-        embeddings = np.stack([embed_utterance(u) for u in utterances])
+        embeddings = np.stack(
+            [embed_utterance(u, sample_rate) for u in utterances]
+        )
         # Check intra-class consistency: all samples must come from one voice.
         centroid = embeddings.mean(axis=0)
         centroid /= np.linalg.norm(centroid) + 1e-9
@@ -99,9 +117,11 @@ class VoiceGate:
             ),
             encoding="utf-8",
         )
+        os.chmod(path, 0o600)  # biometric data: owner-only
         return {"user": user, "utterances": len(utterances), "consistency": round(spread, 4)}
 
     def delete(self, user: str) -> bool:
+        _safe_username(user)
         path = profiles_dir() / f"{user}{PROFILE_EXT}"
         removed = self.profiles.pop(user, None) is not None
         if path.exists():
@@ -112,29 +132,19 @@ class VoiceGate:
     # ------------------------------------------------------------------
     # Verification
     # ------------------------------------------------------------------
-    def verify(self, audio: np.ndarray) -> GateDecision:
-        """Embed one utterance and match it against all enrolled users."""
+    def verify(self, audio: np.ndarray, sample_rate: int = 16000) -> GateDecision:
+        """Embed one utterance and match it against all enrolled users.
+
+        ``sample_rate`` must match the actual capture rate (44.1k/48k input
+        is resampled internally); passing a wrong rate silently corrupts
+        the embedding.
+        """
         if not self.profiles:
             raise RuntimeError(
                 "no enrolled voices - run `vocalis enroll` first or see examples/01"
             )
-        embedding = embed_utterance(audio)
-        scores = {
-            user: cosine_similarity(embedding, centroid)
-            for user, centroid in self.profiles.items()
-        }
-        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
-        best_user, best_score = ranked[0]
-        threshold = self.config.voice_gate.threshold
-        accepted = best_score >= threshold
-        runner_up = ranked[1] if len(ranked) > 1 else None
-        return GateDecision(
-            accepted=accepted,
-            user=best_user if accepted else None,
-            similarity=best_score,
-            threshold=threshold,
-            runner_up=runner_up,
-        )
+        embedding = embed_utterance(audio, sample_rate)
+        return self.verify_embedding(embedding)
 
     def verify_embedding(self, embedding: np.ndarray) -> GateDecision:
         """Verify against a pre-computed embedding (used by tests/ASR pipeline)."""

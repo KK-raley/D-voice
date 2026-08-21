@@ -2,6 +2,8 @@
 
 All user-modifiable settings live in ``~/.vocalis/config.toml`` (created on
 first run). Secrets are always read from environment variables, never stored.
+The config directory is created with owner-only permissions (0700) because it
+may contain voiceprints (biometric data).
 """
 
 from __future__ import annotations
@@ -15,6 +17,10 @@ from typing import Any
 def _home_dir() -> Path:
     base = Path(os.environ.get("VOCALIS_HOME", Path.home() / ".vocalis"))
     base.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(base, 0o700)  # biometric data may live here
+    except OSError:
+        pass  # e.g. some network filesystems
     return base
 
 
@@ -71,7 +77,7 @@ class ASRConfig:
 
 @dataclass
 class BrainConfig:
-    """Local small-model (Jarvis) configuration via Ollama."""
+    """Local small-model (D-VOICE brain) configuration via Ollama."""
 
     enabled: bool = True
     host: str = "http://localhost:11434"
@@ -101,11 +107,18 @@ class VocalisConfig:
     log_level: str = "INFO"
 
     # ------------------------------------------------------------------
-    # Persistence (TOML, no external deps beyond stdlib on py3.11+;
-    # tomllib fallback handled in load/save below)
+    # Persistence (TOML via tomli-w; tomllib on py3.11+, tomli otherwise)
     # ------------------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        def _strip_none(obj: Any) -> Any:
+            """TOML has no null type: drop None fields (defaults apply on load)."""
+            if isinstance(obj, dict):
+                return {k: _strip_none(v) for k, v in obj.items() if v is not None}
+            if isinstance(obj, list):
+                return [_strip_none(v) for v in obj if v is not None]
+            return obj
+
+        return _strip_none(asdict(self))
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "VocalisConfig":
@@ -123,51 +136,26 @@ class VocalisConfig:
         return cfg
 
     def save(self, path: Path | None = None) -> Path:
+        import tomli_w
+
         path = path or _home_dir() / "config.toml"
-        try:
-            import tomllib  # noqa: F401  (reader)
-
-            writer: Any = None
-        except ImportError:  # pragma: no cover - py3.10
-            writer = None
-        try:
-            if writer is not None:  # pragma: no cover
-                text = writer.dumps(self.to_dict())  # type: ignore[union-attr]
-            else:
-                import tomli_w
-
-                text = tomli_w.dumps(self.to_dict())
-        except Exception:
-            # Last-resort: simple repr-based persistence keeps the project
-            # runnable even without TOML writer libraries.
-            import json
-
-            text = json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
-            path = path.with_suffix(".json")
-        path.write_text(text, encoding="utf-8")
+        path.write_text(tomli_w.dumps(self.to_dict()), encoding="utf-8")
         return path
 
     @classmethod
     def load(cls) -> "VocalisConfig":
         home = _home_dir()
-        for name in ("config.toml", "config.json"):
-            p = home / name
-            if not p.exists():
-                continue
+        p = home / "config.toml"
+        if p.exists():
             raw: dict[str, Any]
-            if p.suffix == ".toml":
-                try:
-                    import tomllib
+            try:
+                import tomllib
 
-                    raw = tomllib.loads(p.read_text(encoding="utf-8"))
-                except ImportError:  # pragma: no cover
-                    import tomli
+                raw = tomllib.loads(p.read_text(encoding="utf-8"))
+            except ImportError:  # pragma: no cover - py3.10
+                import tomli
 
-                    raw = tomli.loads(p.read_text(encoding="utf-8"))
-            else:
-                import json
-
-                raw = json.loads(p.read_text(encoding="utf-8"))
+                raw = tomli.loads(p.read_text(encoding="utf-8"))
             return cls.from_dict(raw)
         cfg = cls()
         cfg.save()

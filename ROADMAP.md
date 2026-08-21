@@ -29,7 +29,7 @@ Vocalis is under active development. This document tracks what is shipping next.
 ## v0.4 — "Swarm Control" (Q2 2027)
 
 - [ ] 📋 Multi-agent orchestration: parallel task fan-out with voice status board
-- [ ] 📋 Proactive interruption: JARVIS can politely break in on anomalies
+- [ ] 📋 Proactive interruption: D-VOICE can politely break in on anomalies
 - [ ] 📋 Priority queues for concurrent agent tasks
 - [ ] 📋 MCP (Model Context Protocol) connector standard
 

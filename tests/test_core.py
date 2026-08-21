@@ -114,7 +114,7 @@ class TestCommander:
     def test_status_query_detection(self):
         from vocalis.agents.registry import AgentRegistry
         from vocalis.agents.echo import EchoAgent
-        from vocalis.jarvis.commander import Commander
+        from vocalis.dvoice.commander import Commander
 
         registry = AgentRegistry()
         registry.register(EchoAgent())
@@ -126,7 +126,7 @@ class TestCommander:
     def test_question_vs_order(self):
         from vocalis.agents.registry import AgentRegistry
         from vocalis.agents.echo import EchoAgent
-        from vocalis.jarvis.commander import Commander
+        from vocalis.dvoice.commander import Commander
 
         registry = AgentRegistry()
         registry.register(EchoAgent())
@@ -137,7 +137,7 @@ class TestCommander:
     def test_fanout_parse(self):
         from vocalis.agents.registry import AgentRegistry
         from vocalis.agents.echo import EchoAgent
-        from vocalis.jarvis.commander import Commander
+        from vocalis.dvoice.commander import Commander
 
         registry = AgentRegistry()
         registry.register(EchoAgent())

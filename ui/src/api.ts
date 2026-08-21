@@ -40,6 +40,7 @@ export function useEventStream(maxEvents = 120) {
       ws.onmessage = (msg) => {
         try {
           const ev: BusEvent = JSON.parse(msg.data);
+          if (!ev.id || !ev.type) return; // ignore malformed frames
           setEvents((prev) => [ev, ...prev].slice(0, maxEvents));
         } catch {
           /* ignore malformed */
@@ -57,11 +58,17 @@ export function useEventStream(maxEvents = 120) {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-  if (!resp.ok) throw new Error(`${path}: ${resp.status}`);
+  const headers = { "Content-Type": "application/json", ...(init?.headers ?? {}) };
+  const resp = await fetch(path, { ...init, headers });
+  if (!resp.ok) {
+    let detail = `${resp.status}`;
+    try {
+      detail += `: ${JSON.stringify(await resp.json()).slice(0, 200)}`;
+    } catch {
+      /* no body */
+    }
+    throw new Error(`${path} ${detail}`);
+  }
   return resp.json() as Promise<T>;
 }
 
@@ -76,14 +83,16 @@ export function useAgents(events: BusEvent[]) {
     return () => clearInterval(t);
   }, []);
   return useMemo(() => {
-    // overlay live status from the event stream
     const live = new Map(agents.map((a) => [a.name, { ...a }]));
-    for (const ev of events) {
+    // events[0] is newest: replay old -> new so the newest status wins.
+    const window = events.slice(0, 20).reverse();
+    for (const ev of window) {
       if (ev.type === "agent.status") {
         const rec = live.get(ev.data.agent as string);
         if (rec) rec.status = ev.data.status as AgentInfo["status"];
       }
     }
     return [...live.values()];
-  }, [agents, events.slice(0, 20)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents, events[0], events.length]);
 }

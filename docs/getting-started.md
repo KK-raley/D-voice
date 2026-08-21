@@ -3,7 +3,7 @@
 ## 1. Install
 
 ```bash
-# Core (agents, jarvis, server, CLI)
+# Core (agents, dvoice, server, CLI)
 pip install -e .
 
 # Full voice stack (mic, speaker verification, ASR, TTS)
@@ -11,9 +11,9 @@ pip install -e ".[all]"
 ```
 
 Requirements: Python 3.10+, a microphone for enrollment, and (optional)
-[Ollama](https://ollama.com) for the local Jarvis brain.
+[Ollama](https://ollama.com) for the local D-VOICE brain.
 
-## 2. Give JARVIS a brain (optional but recommended)
+## 2. Give D-VOICE a brain (optional but recommended)
 
 ```bash
 ollama pull qwen2.5:3b-instruct
@@ -57,7 +57,7 @@ cd ui && npm install && npm run dev   # HUD on :5173
 ```
 
 Open http://localhost:5173 - you get the live waveform, agent statuses,
-task progress bars, the JARVIS console, and the Voice Studio to tune
+task progress bars, the D-VOICE console, and the Voice Studio to tune
 rate / pitch / volume / timbre with instant previews.
 
 ## Troubleshooting
@@ -66,5 +66,5 @@ rate / pitch / volume / timbre with instant previews.
 | ------- | --- |
 | `resemblyzer` fails to install | Use Python 3.10-3.12; on Windows a C++ Build Tools install may be needed for webrtcvad |
 | No audio output on Windows | `TTSService.play_file` falls back to `winsound`; ensure default playback device set |
-| Jarvis replies "(jarvis offline)" | Start Ollama (`ollama serve`) or keep `brain.fallback_to_rules = true` |
+| D-VOICE replies "(dvoice offline)" | Start Ollama (`ollama serve`) or keep `brain.fallback_to_rules = true` |
 | Edge-TTS times out | Requires internet; a local Piper backend is on the roadmap |

@@ -1,4 +1,4 @@
-"""JarvisBrain: a local small language model (via Ollama) that acts as the
+"""DVoiceBrain: a local small language model (via Ollama) that acts as the
 always-on operations narrator and conversational layer.
 
 Responsibilities:
@@ -7,20 +7,24 @@ Responsibilities:
   * summarize system status on demand ("What's going on right now?")
 
 If Ollama is unreachable the brain degrades gracefully to deterministic
-rule-based templates, so the ecosystem never goes mute.
+rule-based templates, so the ecosystem never goes mute. Degradation is
+always logged and surfaced as a ``monitor.alert`` event - never silent.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from vocalis.agents.registry import AgentRegistry
 from vocalis.config import BrainConfig, VocalisConfig
 from vocalis.server.events import Event, EventBus, EventType, bus
 
-SYSTEM_PROMPT = """You are JARVIS, the user's voice operations assistant.
+logger = logging.getLogger("vocalis.dvoice")
+
+SYSTEM_PROMPT = """You are D-VOICE, the user's voice operations assistant.
 You run locally and narrate the status of AI agents working for the user.
-Personality: concise, calm, slightly witty, like Iron Man's JARVIS.
+Personality: concise, calm, slightly witty, like a trusted flight engineer.
 Rules:
 - Keep spoken replies under 3 sentences (they are read aloud).
 - When reporting task status, mention agent name, state, and ETA if clear.
@@ -29,7 +33,17 @@ Rules:
 """
 
 
-class JarvisBrain:
+def _first(content: Any) -> str:
+    """Extract text from either a pydantic model or a dict (ollama versions differ)."""
+    if isinstance(content, dict):
+        return str(content.get("message", {}).get("content", ""))
+    message = getattr(content, "message", None)
+    if message is not None:
+        return str(getattr(message, "content", "") or "")
+    return ""
+
+
+class DVoiceBrain:
     def __init__(
         self,
         config: VocalisConfig | None = None,
@@ -58,10 +72,10 @@ class JarvisBrain:
         try:
             import ollama
 
-            client = ollama.AsyncClient(host=self.brain_cfg.host)
-            self._ollama = client
-            return client
-        except Exception:
+            self._ollama = ollama.AsyncClient(host=self.brain_cfg.host)
+            return self._ollama
+        except Exception as e:
+            logger.warning("Ollama client unavailable (%s); using rule-based replies", e)
             return None
 
     async def available(self) -> bool:
@@ -74,6 +88,13 @@ class JarvisBrain:
         except Exception:
             return False
 
+    async def _degrade(self, reason: str) -> None:
+        """Make degradation visible instead of silently swallowing it."""
+        logger.warning("D-VOICE brain degrading to rules: %s", reason)
+        await self.bus.publish(
+            EventType.MONITOR_ALERT, message=f"D-VOICE local model unavailable: {reason}"
+        )
+
     # ------------------------------------------------------------------
     # Dialogue
     # ------------------------------------------------------------------
@@ -83,7 +104,7 @@ class JarvisBrain:
         client = self._get_ollama()
         if client is not None:
             try:
-                messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+                messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
                 if context:
                     messages.append(
                         {
@@ -102,16 +123,18 @@ class JarvisBrain:
                         "num_predict": self.brain_cfg.max_tokens,
                     },
                 )
-                reply = resp["message"]["content"].strip()
+                reply = _first(resp).strip()
+                if not reply:
+                    raise ValueError("empty reply from local model")
                 self._remember(user_text, reply)
                 return reply
-            except Exception:
-                pass  # fall through to rules
+            except Exception as e:
+                await self._degrade(str(e))
         if self.brain_cfg.fallback_to_rules:
-            reply = self._rule_reply(user_text, context)
+            reply = await self._rule_reply(user_text, context)
             self._remember(user_text, reply)
             return reply
-        return "(jarvis offline)"
+        return "(d-voice offline)"
 
     # ------------------------------------------------------------------
     # Narration of agent events
@@ -130,7 +153,7 @@ class JarvisBrain:
             EventType.TASK_COMPLETED: "Task complete. {agent} finished: {instruction}.",
             EventType.TASK_FAILED: "Heads up - {agent} failed: {error}.",
             EventType.MONITOR_ALERT: "Warning: {message}.",
-        }.get(etype)
+        }.get(etype)  # type: ignore[arg-type]
         if template is None:
             return ""
         try:
@@ -166,18 +189,13 @@ class JarvisBrain:
         if len(self.history) > 40:
             self.history = self.history[-40:]
 
-    def _rule_reply(self, user_text: str, context: dict[str, Any]) -> str:
+    async def _rule_reply(self, user_text: str, context: dict[str, Any]) -> str:
         """Deterministic fallback dialogue (no local model available)."""
         text = user_text.lower()
         if any(k in text for k in ("status", "状态", "进展", "怎么样", "进度")):
-            import asyncio
-
-            try:
-                return asyncio.get_event_loop().run_until_complete(self.status_report())
-            except Exception:
-                return "All monitored tasks are proceeding."
+            return await self.status_report()
         if any(k in text for k in ("who are you", "你是谁")):
-            return "I'm JARVIS, your local operations narrator. I watch your agents and answer questions."
+            return "I'm D-VOICE, your local operations narrator. I watch your agents and answer questions."
         if any(k in text for k in ("hello", "hi", "你好", "在吗")):
             return "At your service."
         if text.endswith("?") or text.endswith("？"):

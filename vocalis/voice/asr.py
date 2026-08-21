@@ -8,6 +8,7 @@ from functools import lru_cache
 import numpy as np
 
 from vocalis.config import ASRConfig
+from vocalis.voice.audio import resample
 
 
 @dataclass
@@ -34,11 +35,13 @@ class Transcriber:
         self.config = config or ASRConfig()
 
     def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> Transcription:
+        # faster-whisper requires 16 kHz float32 input.
+        audio16 = resample(np.asarray(audio, dtype=np.float32), sample_rate, 16000)
         model = _load_model(
             self.config.model_size, self.config.device, self.config.compute_type
         )
         segments_iter, info = model.transcribe(
-            audio.astype(np.float32),
+            audio16,
             language=self.config.language,
             beam_size=5,
             vad_filter=True,

@@ -1,19 +1,23 @@
 """Lightweight asyncio event bus powering real-time status reporting.
 
-Every part of the system (VoiceGate, agents, monitor, Jarvis brain) publishes
-events here; the FastAPI server relays them to the HUD over WebSocket and the
-monitor/notifier subscribes for watchdog + notification logic.
+Every part of the system (VoiceGate, agents, monitor, D-VOICE brain)
+publishes events here; the FastAPI server relays them to the HUD over
+WebSocket and the monitor/notifier subscribes for watchdog + notification
+logic.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable
+
+logger = logging.getLogger("vocalis.events")
 
 Handler = Callable[["Event"], Any]
 
@@ -35,9 +39,9 @@ class EventType(str, Enum):
     TASK_FAILED = "task.failed"
     AGENT_STATUS = "agent.status"
 
-    # Jarvis brain
-    JARVIS_SAYING = "jarvis.saying"
-    JARVIS_COMMAND = "jarvis.command"
+    # D-VOICE brain
+    DVOICE_SAYING = "dvoice.saying"
+    DVOICE_COMMAND = "dvoice.command"
     MONITOR_ALERT = "monitor.alert"
 
     # System
@@ -46,13 +50,14 @@ class EventType(str, Enum):
 
 @dataclass
 class Event:
-    type: EventType
+    type: EventType | str
     data: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     ts: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "ts": self.ts, "type": self.type.value, "data": self.data}
+        value = self.type.value if isinstance(self.type, EventType) else str(self.type)
+        return {"id": self.id, "ts": self.ts, "type": value, "data": self.data}
 
 
 class EventBus:
@@ -82,14 +87,14 @@ class EventBus:
         self._handlers[pattern].append(handler)
 
     # -- publish -------------------------------------------------------
-    async def publish(self, type_: EventType, **data: Any) -> Event:
+    async def publish(self, type_: EventType | str, **data: Any) -> Event:
         event = Event(type=type_, data=data)
         self.history.append(event)
         if len(self.history) > self._history_size:
             self.history = self.history[-self._history_size :]
 
         for pattern, queues in self._subscribers.items():
-            if self._match(pattern, event.type.value):
+            if self._match(pattern, event.type.value if isinstance(event.type, EventType) else str(event.type)):
                 for q in queues:
                     try:
                         q.put_nowait(event)
@@ -101,21 +106,15 @@ class EventBus:
                             pass
 
         for pattern, handlers in self._handlers.items():
-            if self._match(pattern, event.type.value):
+            if self._match(pattern, event.type.value if isinstance(event.type, EventType) else str(event.type)):
                 for h in handlers:
-                    result = h(event)
-                    if asyncio.iscoroutine(result):
-                        asyncio.create_task(result)  # noqa: RUF006
+                    try:
+                        result = h(event)
+                        if asyncio.iscoroutine(result):
+                            asyncio.create_task(result)  # noqa: RUF006
+                    except Exception:
+                        logger.exception("event handler failed for %s", event.type)
         return event
-
-    def publish_sync(self, type_: EventType, **data: Any) -> Event:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-        if loop and loop.is_running():
-            return loop.run_until_complete(self.publish(type_, **data))
-        return asyncio.run(self.publish(type_, **data))
 
     @staticmethod
     def _match(pattern: str, value: str) -> bool:

@@ -9,7 +9,7 @@ const EVENT_STYLE: Record<string, { icon: string; color: string }> = {
   "task.progress": { icon: " ◆ ", color: "#818cf8" },
   "task.completed": { icon: "✔", color: "#34d399" },
   "task.failed": { icon: "✖", color: "#f87171" },
-  "jarvis.saying": { icon: "◈", color: "#818cf8" },
+  "dvoice.saying": { icon: "◈", color: "#818cf8" },
   "monitor.alert": { icon: "⚠", color: "#fbbf24" },
   "tts.speaking": { icon: "♫", color: "#22d3ee" },
 };
@@ -33,7 +33,7 @@ export default function AgentFeed({ events }: { events: BusEvent[] }) {
       <div className="feed">
         {items.length === 0 && (
           <div className="feed-item" style={{ color: "var(--dim)" }}>
-            Awaiting events… dispatch a task or ask JARVIS something.
+            Awaiting events… dispatch a task or ask D-VOICE something.
           </div>
         )}
         {items.map((ev) => {
@@ -42,8 +42,8 @@ export default function AgentFeed({ events }: { events: BusEvent[] }) {
           const label =
             ev.type === "task.progress"
               ? `${d.agent}: ${d.current_step ?? ""} (${Math.round(Number(d.progress ?? 0) * 100)}%)`
-              : ev.type === "jarvis.saying"
-              ? `JARVIS: ${String(d.text ?? "").slice(0, 90)}`
+              : ev.type === "dvoice.saying"
+              ? `D-VOICE: ${String(d.text ?? "").slice(0, 90)}`
               : `${d.agent ?? "system"}: ${d.instruction ?? d.message ?? d.text ?? d.status ?? ""}`;
           return (
             <div className="feed-item" key={ev.id}>

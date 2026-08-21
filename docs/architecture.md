@@ -21,7 +21,7 @@
                       question │              │ orders
                               ▼              ▼
                   ┌───────────────┐   ┌──────────────────────┐
-                  │  JarvisBrain  │   │  AgentRegistry       │
+                  │  DVoiceBrain  │   │  AgentRegistry       │
                   │ (Ollama local │   │  ├─ echo (demo)      │
                   │  small model, │   │  ├─ claude-code CLI  │
                   │  rule-based   │   │  └─ openai API       │
@@ -52,9 +52,9 @@
 | `vocalis/voice/asr.py` | offline transcription |
 | `vocalis/voice/tts.py` | Edge-TTS engine + tunable `VoiceProfile` |
 | `vocalis/agents/*` | connector base + implementations |
-| `vocalis/jarvis/assistant.py` | local LLM dialogue, narration, status reports |
-| `vocalis/jarvis/monitor.py` | milestone narration + watchdog alerts |
-| `vocalis/jarvis/commander.py` | intent routing and fan-out dispatch |
+| `vocalis/dvoice/assistant.py` | local LLM dialogue, narration, status reports |
+| `vocalis/dvoice/monitor.py` | milestone narration + watchdog alerts |
+| `vocalis/dvoice/commander.py` | intent routing and fan-out dispatch |
 | `vocalis/notify/notifier.py` | spoken chime + desktop toast |
 | `vocalis/server/*` | FastAPI REST + `/ws` event stream |
 

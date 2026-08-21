@@ -24,26 +24,35 @@ from rich.table import Table
 import vocalis
 from vocalis.agents.registry import build_default_registry
 from vocalis.config import VocalisConfig
-from vocalis.jarvis.assistant import JarvisBrain
-from vocalis.jarvis.commander import Commander
+from vocalis.dvoice.assistant import DVoiceBrain
+from vocalis.dvoice.commander import Commander
 from vocalis.voice.audio import load_wav, record
 from vocalis.voice.gate import VoiceGate
 
 app = typer.Typer(
     name="vocalis",
-    help="Voice-first JARVIS-style agent ecosystem.",
+    help="Voice-first D-VOICE agent ecosystem.",
     no_args_is_help=True,
     add_completion=False,
 )
 console = Console()
 
 
-def _needs_voice_stack() -> None:
-    try:
-        import numpy  # noqa: F401
-    except ImportError as e:
-        console.print("[red]Voice extras missing.[/] Run: pip install 'vocalis-voice-agent[voice]'")
-        raise typer.Exit(1) from e
+def _needs_voice_stack(*modules: str) -> None:
+    import importlib
+
+    missing = []
+    for mod in modules:
+        try:
+            importlib.import_module(mod)
+        except ImportError:
+            missing.append(mod)
+    if missing:
+        console.print(
+            f"[red]Missing voice dependencies: {', '.join(missing)}.[/]\n"
+            "Install them with: pip install 'vocalis-voice-agent[voice]'"
+        )
+        raise typer.Exit(1)
 
 
 # ----------------------------------------------------------------------
@@ -56,7 +65,7 @@ def enroll(
     seconds: float = typer.Option(3.5, "--seconds", "-s", help="Seconds per utterance"),
 ) -> None:
     """Register your voice so Vocalis only obeys you."""
-    _needs_voice_stack()
+    _needs_voice_stack("resemblyzer", "sounddevice")
     gate = VoiceGate()
     utterances = []
     console.print(
@@ -87,9 +96,13 @@ def gate(
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
     """Verify whether a recorded utterance belongs to an enrolled user."""
-    _needs_voice_stack()
+    _needs_voice_stack("resemblyzer")
     audio, sr = load_wav(file)
-    decision = VoiceGate().verify(audio)
+    try:
+        decision = VoiceGate().verify(audio, sample_rate=sr)
+    except RuntimeError as e:
+        console.print(f"[yellow]{e}[/]")
+        raise typer.Exit(1)
     if json_out:
         console.print_json(json.dumps(decision.to_dict()))
         return
@@ -116,8 +129,12 @@ def speak(
     """Speak text with a tunable voice profile (Edge-TTS)."""
     from vocalis.voice.tts import TTSService
 
-    asyncio.run(TTSService().speak(text, profile, play=True))
-    console.print(f"[green]Spoken with profile '{profile or 'default'}'[/]")
+    result = asyncio.run(TTSService().speak(text, profile, play=True))
+    if result.ok:
+        console.print(f"[green]Spoken with profile '{profile or 'default'}'[/] ({result.engine})")
+    else:
+        console.print(f"[red]Speech failed:[/] {result.error}")
+        raise typer.Exit(1)
 
 
 # ----------------------------------------------------------------------
@@ -146,9 +163,13 @@ def run(
     verify_voice: bool = typer.Option(False, "--verify", help="Require VoiceGate acceptance first"),
 ) -> None:
     """Dispatch a task to an agent with live progress narration."""
-    _needs_voice_stack()
     if verify_voice:
-        decision = VoiceGate().verify(record(seconds=4.0))
+        _needs_voice_stack("resemblyzer", "sounddevice")
+        try:
+            decision = VoiceGate().verify(record(seconds=4.0))
+        except RuntimeError as e:
+            console.print(f"[yellow]{e}[/]")
+            raise typer.Exit(1)
         if not decision.accepted:
             console.print(f"[red]VoiceGate rejected input[/] (sim={decision.similarity:.2f})")
             raise typer.Exit(1)
@@ -164,13 +185,13 @@ def run(
 
 @app.command()
 def ask(
-    question: str = typer.Argument(..., help="Question for the local Jarvis brain"),
+    question: str = typer.Argument(..., help="Question for the local D-VOICE brain"),
 ) -> None:
     """Ask the local small model anything."""
     registry = build_default_registry()
-    brain = JarvisBrain(registry=registry)
+    brain = DVoiceBrain(registry=registry)
     answer = asyncio.run(brain.chat(question))
-    console.print(Panel(answer, title="JARVIS"))
+    console.print(Panel(answer, title="D-VOICE"))
 
 
 @app.command()
@@ -205,7 +226,7 @@ def serve(
     uvicorn.run("vocalis.server.app:app", host=host, port=port, reload=reload)
 
 
-@app.command()
+@app.command("config")
 def config_show() -> None:
     """Dump the effective configuration."""
     console.print_json(json.dumps(VocalisConfig.load().to_dict(), ensure_ascii=False))

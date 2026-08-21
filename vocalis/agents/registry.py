@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from vocalis.agents.base import AgentConnector, AgentStatus, TaskRecord
 from vocalis.server.events import EventBus, EventType, bus
+
+logger = logging.getLogger("vocalis.agents")
 
 
 class AgentRegistry:
@@ -32,24 +35,29 @@ class AgentRegistry:
             {
                 "name": c.name,
                 "description": c.description,
-                "capabilities": c.capabilities,
+                "capabilities": list(c.capabilities),
                 "status": c.status.value,
             }
             for c in self.connectors.values()
         ]
 
     def default_agent(self) -> str:
-        return next(iter(self.connectors), "echo")
+        if not self.connectors:
+            raise RuntimeError("no agents registered - register a connector first")
+        # Prefer the offline demo agent when present.
+        if "echo" in self.connectors:
+            return "echo"
+        return next(iter(self.connectors))
 
     # -- dispatch ------------------------------------------------------
     async def dispatch(self, agent: str | None, instruction: str, **kw: Any) -> TaskRecord:
         agent = agent or self.default_agent()
         connector = self.get(agent)
-        task_id_hint = TaskRecord(agent=agent, instruction=instruction).id
-        await self.bus.publish(
-            EventType.TASK_QUEUED, id=task_id_hint, agent=agent, instruction=instruction
-        )
-        record = await connector.run(instruction, **kw)
+        # Create the record up-front so queued/started/progress events all
+        # carry the same id (the HUD relies on this for task timelines).
+        record = TaskRecord(agent=agent, instruction=instruction)
+        await self.bus.publish(EventType.TASK_QUEUED, **record.to_dict())
+        record = await connector.run(instruction, record=record, **kw)
         self.history.append(record)
         self.history = self.history[-100:]
         return record
@@ -76,25 +84,22 @@ class AgentRegistry:
         }
 
 
-# Singleton registry pre-loaded with the offline demo agent.
 def build_default_registry(event_bus: EventBus | None = None) -> AgentRegistry:
+    """Registry pre-loaded with the offline demo agent + any optional integrations."""
     registry = AgentRegistry(event_bus)
     from vocalis.agents.echo import EchoAgent
 
     registry.register(EchoAgent(event_bus))
-    try:  # optional integrations
+    try:  # optional integrations - missing deps must not be silent
         from vocalis.agents.openai_agent import OpenAIAgent
 
         registry.register(OpenAIAgent(event_bus))
     except Exception:
-        pass
+        logger.debug("openai connector unavailable", exc_info=True)
     try:
         from vocalis.agents.claude_code import ClaudeCodeAgent
 
         registry.register(ClaudeCodeAgent(event_bus))
     except Exception:
-        pass
+        logger.debug("claude-code connector unavailable", exc_info=True)
     return registry
-
-
-global_registry = build_default_registry()

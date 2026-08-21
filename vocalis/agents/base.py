@@ -7,7 +7,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Callable
+from typing import Any, AsyncIterator
 
 from vocalis.server.events import EventBus, EventType, bus
 
@@ -62,13 +62,13 @@ class AgentConnector(ABC):
     """Base class for all agent integrations.
 
     Subclasses implement :meth:`stream_run`, yielding progress updates that
-    the registry turns into task records and bus events. Connectors should
-    keep the yielded strings human-friendly: JARVIS speaks them aloud.
+    become task records and bus events. Connectors should keep the yielded
+    strings human-friendly: D-VOICE speaks them aloud.
     """
 
     name: str = "base"
     description: str = "abstract agent"
-    capabilities: list[str] = []
+    capabilities: tuple[str, ...] = ()
 
     def __init__(self, event_bus: EventBus | None = None) -> None:
         self.bus = event_bus or bus
@@ -76,9 +76,17 @@ class AgentConnector(ABC):
         self.active_tasks: dict[str, TaskRecord] = {}
 
     # ------------------------------------------------------------------
-    async def run(self, instruction: str, **kwargs: Any) -> TaskRecord:
-        """Execute an instruction end-to-end, emitting lifecycle events."""
-        record = TaskRecord(agent=self.name, instruction=instruction)
+    async def run(
+        self, instruction: str, record: TaskRecord | None = None, **kwargs: Any
+    ) -> TaskRecord:
+        """Execute an instruction end-to-end, emitting lifecycle events.
+
+        An externally-created ``record`` (e.g. by the registry, so the
+        queued/started/progress events all share one task id) may be passed
+        in; otherwise a fresh one is created here.
+        """
+        record = record or TaskRecord(agent=self.name, instruction=instruction)
+        record.instruction = instruction or record.instruction
         self.active_tasks[record.id] = record
         self.status = AgentStatus.BUSY
 
@@ -104,7 +112,10 @@ class AgentConnector(ABC):
         finally:
             record.finished_at = time.time()
             self.active_tasks.pop(record.id, None)
-            if self.status != AgentStatus.ERROR:
+            # Recover from ERROR on the next successful dispatch (no TTL yet).
+            if self.status == AgentStatus.ERROR and record.status is TaskStatus.COMPLETED:
+                self.status = AgentStatus.IDLE
+            elif self.status != AgentStatus.ERROR:
                 self.status = AgentStatus.IDLE
             await self.bus.publish(
                 EventType.AGENT_STATUS, agent=self.name, status=self.status.value

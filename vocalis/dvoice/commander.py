@@ -1,6 +1,6 @@
 """Commander: routes natural-language orders to the right agent.
 
-Intent detection runs on the JarvisBrain (local LLM when available,
+Intent detection runs on the DVoiceBrain (local LLM when available,
 rule-based fallback otherwise) and supports both single dispatch and
 parallel fan-out ("ask X to do A, and Y to do B").
 """
@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from vocalis.agents.registry import AgentRegistry
-from vocalis.jarvis.assistant import JarvisBrain
+from vocalis.dvoice.assistant import DVoiceBrain
 from vocalis.server.events import EventBus, EventType, bus
 
 
@@ -35,21 +35,27 @@ class CommandPlan:
 
 
 STATUS_PATTERNS = re.compile(
-    r"(现在|当前|目前)?(的)?(状态|进展|进度|情况)|status|progress|what.s (going on|happening)",
+    r"(现在|当前|目前)?(的)?(状态|进展|进度|情况)|\bstatus\b|\bprogress\b|what.s (going on|happening)",
     re.IGNORECASE,
 )
-QUESTION_HINTS = ("?", "？", "what", "why", "how", "who", "when", "什么", "为什么", "怎么", "谁", "几")
+# Word-boundary anchored question hints (avoids matching "whatever"/"几百").
+QUESTION_HINTS_RE = re.compile(
+    r"\b(what|why|how|who|when|where|is|are|can|does)\b.*\?|"
+    r"^\s*(什么|为什么|怎么|怎样|如何|谁|几|哪|是否|能不能)\b|"
+    r"[?？]\s*$",
+    re.IGNORECASE,
+)
 
 
 class Commander:
     def __init__(
         self,
         registry: AgentRegistry,
-        brain: JarvisBrain | None = None,
+        brain: DVoiceBrain | None = None,
         event_bus: EventBus | None = None,
     ) -> None:
         self.registry = registry
-        self.brain = brain or JarvisBrain(registry=registry)
+        self.brain = brain or DVoiceBrain(registry=registry)
         self.bus = event_bus or bus
 
     # ------------------------------------------------------------------
@@ -70,10 +76,8 @@ class Commander:
             return CommandPlan(raw=text, assignments=assignments)
 
         # Is it a question (-> brain) or an order (-> default agent)?
-        looks_like_question = (
-            text.endswith(("?", "？")) or any(h in text.lower() for h in QUESTION_HINTS)
-        )
-        if looks_like_question and not text.lower().startswith(("run", "执行", "帮我")):
+        imperative = text.lower().startswith(("run ", "execute ", "帮我", "让", "@"))
+        if QUESTION_HINTS_RE.search(text) and not imperative:
             return CommandPlan(raw=text, question=text)
 
         return CommandPlan(raw=text, assignments=[(self.registry.default_agent(), text)])
@@ -102,14 +106,14 @@ class Commander:
                 # continuation of previous instruction
                 prev_agent, prev_instr = assignments[-1]
                 assignments[-1] = (prev_agent, f"{prev_instr} {seg}")
-        return assignments if len(assignments) >= 1 and any(a for a in assignments) else []
+        return assignments if assignments else []
 
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
     async def execute(self, utterance: str) -> dict[str, Any]:
         plan = self.plan(utterance)
-        await self.bus.publish(EventType.JARVIS_COMMAND, **plan.to_dict())
+        await self.bus.publish(EventType.DVOICE_COMMAND, **plan.to_dict())
 
         if plan.is_status_query:
             report = await self.brain.status_report()

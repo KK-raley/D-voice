@@ -18,7 +18,7 @@ What should happen instead.
 [ ] ASR / transcription
 [ ] TTS / voice profiles
 [ ] Agent connectors
-[ ] Jarvis brain / monitoring
+[ ] D-VOICE brain / monitoring
 [ ] HUD frontend
 [ ] Docs / CI
 

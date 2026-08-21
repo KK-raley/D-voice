@@ -2,11 +2,34 @@
 
 from __future__ import annotations
 
-import array
 import wave
 from pathlib import Path
 
 import numpy as np
+
+TARGET_RATE = 16000
+
+
+def _require_sounddevice():
+    try:
+        import sounddevice as sd
+    except ImportError as e:
+        raise RuntimeError(
+            "sounddevice is required for microphone capture: "
+            "pip install 'vocalis-voice-agent[voice]'"
+        ) from e
+    return sd
+
+
+def resample(audio: np.ndarray, src_rate: int, dst_rate: int = TARGET_RATE) -> np.ndarray:
+    """Linear-interpolation resampling (adequate for embeddings and whisper)."""
+    if src_rate == dst_rate:
+        return audio
+    duration = audio.size / src_rate
+    target_len = int(duration * dst_rate)
+    x_old = np.linspace(0.0, duration, num=audio.size, endpoint=False)
+    x_new = np.linspace(0.0, duration, num=target_len, endpoint=False)
+    return np.interp(x_new, x_old, audio).astype(np.float32)
 
 
 def record(
@@ -15,13 +38,7 @@ def record(
     channels: int = 1,
 ) -> np.ndarray:
     """Record mono float32 PCM in [-1, 1] from the default input device."""
-    try:
-        import sounddevice as sd
-    except ImportError as e:  # pragma: no cover
-        raise RuntimeError(
-            "sounddevice is required for microphone capture: "
-            "pip install 'vocalis-voice-agent[voice]'"
-        ) from e
+    sd = _require_sounddevice()
     audio = sd.rec(
         int(seconds * sample_rate),
         samplerate=sample_rate,
@@ -29,7 +46,10 @@ def record(
         dtype="float32",
     )
     sd.wait()
-    return audio.squeeze(axis=1) if channels > 1 else audio
+    audio = np.asarray(audio)
+    if audio.ndim > 1:
+        return audio.mean(axis=1)  # downmix to mono
+    return audio
 
 
 def record_until_silence(
@@ -39,7 +59,7 @@ def record_until_silence(
     energy_floor: float = 0.01,
 ) -> np.ndarray:
     """Record until `silence_s` of silence or `max_s` elapsed (VAD-lite)."""
-    import sounddevice as sd
+    sd = _require_sounddevice()
 
     frame_ms = 30
     frame_len = int(sample_rate * frame_ms / 1000)
@@ -77,14 +97,21 @@ def save_wav(path: str | Path, audio: np.ndarray, sample_rate: int = 16000) -> P
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(sample_rate)
-        wf.writeframes(array.array("h", pcm16.tolist()).tobytes())
+        wf.writeframes(pcm16.tobytes())
     return path
 
 
 def load_wav(path: str | Path) -> tuple[np.ndarray, int]:
+    """Load a PCM-16 WAV; returns (mono float32 waveform, sample_rate)."""
     with wave.open(str(path), "rb") as wf:
         sample_rate = wf.getframerate()
         n_channels = wf.getnchannels()
+        sampwidth = wf.getsampwidth()
+        if sampwidth != 2:
+            raise ValueError(
+                f"{path}: only 16-bit PCM WAV is supported (got {sampwidth * 8}-bit); "
+                "convert with e.g. ffmpeg -i in.wav -ac 1 -ar 16000 out.wav"
+            )
         raw = wf.readframes(wf.getnframes())
     data = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32767.0
     if n_channels > 1:

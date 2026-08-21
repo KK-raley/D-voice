@@ -4,7 +4,7 @@
 
 # V O C A L I S
 
-**Your voice. Your agents. Your JARVIS.**
+**Your voice. Your agents. Your D-VOICE.**
 
 A voice-first, local-first agent ecosystem that **only obeys you**, speaks agent
 output aloud in a voice you tune yourself, and narrates what your AI workforce
@@ -18,7 +18,7 @@ is doing — in real time.
 [![Discussions](https://img.shields.io/github/discussions/vocalis-ai/vocalis?color=34d399&logo=github)](https://github.com/vocalis-ai/vocalis/discussions)
 [![Maintenance](https://img.shields.io/maintenance/yes/2027?color=34d399)](https://github.com/vocalis-ai/vocalis/graphs/commit-activity)
 
-[Quick start](#-quick-start) · [Architecture](#-architecture) · [How it works](#-how-it-works) · [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md)
+[Quick start](#-quick-start) · [Architecture](#-architecture) · [How it works](#-how-it-works) · [Showcase](SHOWCASE.md) · [Roadmap](ROADMAP.md) · [Maintenance](MAINTENANCE.md) · [Contributing](CONTRIBUTING.md)
 
 > 🌟 **Star this repo** to follow the ride — wake-word listening, voice cloning and
 > multi-agent swarm control are landing next (see the [roadmap](ROADMAP.md)).
@@ -41,7 +41,7 @@ layer** for the agentic era.
 | 🔐 | **Speaker authentication (VoiceGate)** | Resemblyzer d-vector embeddings + cosine threshold. Enrolled impostors get rejected *before* any LLM sees their words. Voiceprints never leave your machine. |
 | 🗣️ | **Unified speech output** | Every connected agent's text output is spoken through one TTS layer (Edge-TTS neural voices, keyless & free). |
 | 🎛️ | **Voice your way** | Tunable `VoiceProfile`s — voice, rate, pitch, volume — adjustable live from the HUD's Voice Studio or CLI. Evening mode? Slower, warmer, quieter. |
-| 📡 | **Real-time status narration** | A local small model (Ollama) turns raw agent events into calm JARVIS-style spoken reports: *"claude-code is at 60% — refactoring the parser."* |
+| 📡 | **Real-time status narration** | A local small model (Ollama) turns raw agent events into calm D-VOICE-style spoken reports: *"claude-code is at 60% — refactoring the parser."* |
 | 🧠 | **Ask-anything console** | Interrupt anytime with questions; the local brain answers with live system context, fully offline. |
 | 🤖 | **Command your agents** | Natural-language dispatch with fan-out: *"让 echo 跑个演示，然后 claude-code 重构测试"* → parallel dispatch + progress bars. |
 | 🔔 | **Done = you know** | Completion, failure and stall detection trigger a spoken chime + desktop toast. |
@@ -54,18 +54,18 @@ loop alive. **The ecosystem never goes mute.**
 ## ✨ Demo moments
 
 ```
-You (mic)   : "JARVIS，现在什么情况？"
+You (mic)   : "D-VOICE，现在什么情况？"
 VoiceGate   : ACCEPTED user=li  (sim 0.94)
-JARVIS (TTS): "两个任务正在执行。claude-code 正在重构解析器，进度 60%。
+D-VOICE(TTS): "两个任务正在执行。claude-code 正在重构解析器，进度 60%。
                echo 已完成数据摘要。"
 You (mic)   : "让 claude-code 把测试也修一下"
-JARVIS (TTS): "已派发。预计 3 分钟。完成后我会提醒您。"
+D-VOICE(TTS): "已派发。预计 3 分钟。完成后我会提醒您。"
 ...
-JARVIS (TTS): ♪ 任务完成。claude-code 已修复全部 14 个测试，耗时 2 分 41 秒。
+D-VOICE(TTS): ♪ 任务完成。claude-code 已修复全部 14 个测试，耗时 2 分 41 秒。
 ```
 
 > Full walkthrough scripts live in [`examples/`](examples) — from enrollment
-> to the complete JARVIS loop.
+> to the complete D-VOICE loop.
 
 ---
 
@@ -75,7 +75,7 @@ JARVIS (TTS): ♪ 任务完成。claude-code 已修复全部 14 个测试，耗�
 # 1 · install (voice extras included)
 pip install "vocalis-voice-agent[all]"
 
-# 2 · optional but recommended: give JARVIS a local brain
+# 2 · optional but recommended: give D-VOICE a local brain
 ollama pull qwen2.5:3b-instruct
 
 # 3 · enroll YOUR voice (3 short takes)
@@ -86,7 +86,7 @@ vocalis run "summarize this repo"                 # demo agent, zero config
 vocalis run "fix the flaky tests" --agent claude-code --verify
 vocalis ask "当前状态？"                            # ask the local brain
 
-# 5 · launch the JARVIS HUD
+# 5 · launch the D-VOICE HUD
 vocalis serve                        # backend :8642
 cd ui && npm i && npm run dev        # HUD     :5173
 ```
@@ -97,7 +97,7 @@ cd ui && npm i && npm run dev        # HUD     :5173
 ```bash
 pip install -e ".[dev]"
 pytest -q                                # offline test suite
-python examples/04_full_jarvis.py        # full loop, no mic needed
+python examples/04_full_dvoice.py          # full loop, no mic needed
 ```
 
 The `echo` agent simulates a realistic workflow with live progress events,
@@ -125,7 +125,7 @@ so you can watch the HUD, narration and notifications work end-to-end.
               │                                    │       ▲
               │                              questions│      │ progress
               │                                    ▼      │
-              │                              JarvisBrain  TaskMonitor
+              │                              DVoiceBrain  TaskMonitor
               │                              (local LLM)  (milestones+watchdog)
               └────────────► EventBus ◄──────────┴──────────┘
                               │
@@ -147,12 +147,12 @@ vocalis/
 ├── vocalis/               # Python package
 │   ├── voice/             #   VoiceGate · ASR · TTS · audio IO
 │   ├── agents/            #   connector base + echo / claude-code / openai
-│   ├── jarvis/            #   brain · task monitor · commander
+│   ├── dvoice/            #   brain · task monitor · commander
 │   ├── notify/            #   spoken + toast notifications
 │   ├── server/            #   FastAPI · WebSocket event stream
 │   └── cli.py             #   `vocalis` command
 ├── ui/                    # React HUD (Vite · TS · zero UI deps)
-├── examples/              # 01-enroll → 04-full-jarvis
+├── examples/              # 01-enroll → 04-full-dvoice
 ├── tests/                 # offline pytest suite (3·OS × 3·py matrix in CI)
 └── docs/                  # architecture · getting-started
 ```
@@ -216,7 +216,7 @@ pass offline; keep new dependencies justified.
 
 <div align="center">
 
-**"Sometimes you gotta run before you can walk."** — build your JARVIS today.
+**"Sometimes you gotta run before you can walk."** — build your D-VOICE today.
 
 Made with 🎙️ + 🧠 · [Discussions](https://github.com/vocalis-ai/vocalis/discussions) · [Issues](https://github.com/vocalis-ai/vocalis/issues)
 

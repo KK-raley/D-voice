@@ -2,7 +2,7 @@
 
 It simulates a realistic multi-step agent workflow (analyze -> plan ->
 execute -> verify) with progress events, so you can experience the full
-JARVIS loop - voice command, live narration, completion chime - before
+D-VOICE loop - voice command, live narration, completion chime - before
 wiring any external LLM.
 """
 

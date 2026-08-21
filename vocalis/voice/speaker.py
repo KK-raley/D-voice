@@ -10,6 +10,8 @@ from functools import lru_cache
 
 import numpy as np
 
+from vocalis.voice.audio import resample
+
 
 class SpeakerEncoderError(RuntimeError):
     pass
@@ -31,20 +33,16 @@ def get_encoder():
 def embed_utterance(audio: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
     """Return an L2-normalized 256-dim speaker embedding for one utterance.
 
-    Accepts float32/float64 PCM in [-1, 1]. Non-16 kHz input is resampled
-    with linear interpolation (adequate for d-vector extraction).
+    Accepts float32/float64 PCM in [-1, 1]. Any input rate is resampled to
+    16 kHz (the rate the encoder was trained on) - passing the *actual*
+    capture rate is the caller's responsibility.
     """
     audio = np.asarray(audio, dtype=np.float32).squeeze()
     if audio.ndim != 1:
         raise ValueError(f"expected mono waveform, got shape {audio.shape}")
     if audio.size < sample_rate // 4:
         raise ValueError("utterance too short (<0.25s) for reliable embedding")
-    if sample_rate != 16000:
-        duration = audio.size / sample_rate
-        target_len = int(duration * 16000)
-        x_old = np.linspace(0.0, duration, num=audio.size, endpoint=False)
-        x_new = np.linspace(0.0, duration, num=target_len, endpoint=False)
-        audio = np.interp(x_new, x_old, audio).astype(np.float32)
+    audio = resample(audio, sample_rate, 16000)
 
     encoder = get_encoder()
     embedding = encoder.embed_utterance(audio)

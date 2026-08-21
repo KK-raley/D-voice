@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Rebrand**: the assistant brain is now **D-VOICE** (`vocalis.dvoice`,
+  replacing `vocalis.jarvis`); HUD console, event names (`dvoice.saying`,
+  `dvoice.command`) and docs updated accordingly.
+
 ### Planned
 - Streaming ASR with partial transcription (ETA v0.3)
 - Wake-word detection for always-on listening

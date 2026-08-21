@@ -4,14 +4,17 @@ The default backend is Edge-TTS (free, no API key, dozens of neural voices).
 A ``VoiceProfile`` controls voice identity plus rate / pitch / volume so each
 user can shape how agent responses *sound*. Engines are pluggable: implement
 :class:`TTSEngine` and register it to add e.g. XTTS-v2 or a local Piper model.
+
+Playback is always offloaded to a worker thread so synthesis never blocks
+the asyncio event loop.
 """
 
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict, dataclass, field
+import hashlib
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Callable
 
 from vocalis.config import TTSConfig, VocalisConfig, audio_cache_dir
 from vocalis.server.events import EventBus, EventType, bus
@@ -50,6 +53,7 @@ class VoiceProfile:
 class SpeakResult:
     ok: bool
     audio_path: Path | None = None
+    audio_bytes: bytes | None = None
     engine: str = "edge"
     profile: str = ""
     characters: int = 0
@@ -105,16 +109,17 @@ class TTSService:
 
     # -- profiles ------------------------------------------------------
     def profiles(self) -> dict[str, VoiceProfile]:
-        return dict(self._profiles)
+        return {k: replace(v) for k, v in self._profiles.items()}
 
     def get_profile(self, name: str | None = None) -> VoiceProfile:
+        """Return a *copy* of the profile - mutating it never touches the store."""
         name = name or self.config.tts.default_profile
         if name not in self._profiles:
             raise KeyError(f"unknown voice profile '{name}' - available: {list(self._profiles)}")
-        return self._profiles[name]
+        return replace(self._profiles[name])
 
     def upsert_profile(self, profile: VoiceProfile) -> None:
-        self._profiles[profile.name] = profile
+        self._profiles[profile.name] = replace(profile)
         self.config.tts.profiles[profile.name] = {
             "voice": profile.voice,
             "rate": profile.rate,
@@ -124,12 +129,10 @@ class TTSService:
         self.config.save()
 
     # -- synthesis -----------------------------------------------------
-    async def speak(
-        self,
-        text: str,
-        profile_name: str | None = None,
-        play: bool = True,
+    async def synthesize(
+        self, text: str, profile_name: str | None = None
     ) -> SpeakResult:
+        """Synthesize to bytes + cache file without playing."""
         profile = self.get_profile(profile_name)
         engine_name = self.config.tts.engine
         engine = self.engines.get(engine_name)
@@ -139,21 +142,36 @@ class TTSService:
         await self.bus.publish(EventType.TTS_SPEAKING, profile=profile.name, text=text[:120])
         try:
             audio_bytes = await engine.synthesize(text, profile)
-        except Exception as e:  # pragma: no cover - network etc.
+        except Exception as e:
             return SpeakResult(ok=False, engine=engine_name, profile=profile.name, error=str(e))
 
-        suffix = ".mp3"
-        path = audio_cache_dir() / f"{abs(hash((text, profile.name))) & 0xFFFFFFFF:x}{suffix}"
+        key = hashlib.sha1(f"{text}|{profile.name}|{profile.voice}|{profile.rate}|{profile.pitch}|{profile.volume}".encode()).hexdigest()[:16]
+        path = audio_cache_dir() / f"{key}.mp3"
         path.write_bytes(audio_bytes)
-        if play:
-            self.play_file(path)
         return SpeakResult(
-            ok=True, audio_path=path, engine=engine_name, profile=profile.name, characters=len(text)
+            ok=True,
+            audio_path=path,
+            audio_bytes=audio_bytes,
+            engine=engine_name,
+            profile=profile.name,
+            characters=len(text),
         )
+
+    async def speak(
+        self,
+        text: str,
+        profile_name: str | None = None,
+        play: bool = True,
+    ) -> SpeakResult:
+        result = await self.synthesize(text, profile_name)
+        if result.ok and play and result.audio_path is not None:
+            # Never block the event loop with audio hardware.
+            await asyncio.to_thread(self.play_file, result.audio_path)
+        return result
 
     @staticmethod
     def play_file(path: Path) -> None:
-        """Cross-platform blocking playback."""
+        """Cross-platform blocking playback (call via asyncio.to_thread)."""
         try:
             import winsound
 

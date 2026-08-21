@@ -2,19 +2,22 @@
 
 Subscribes to the event bus and maintains a live view of in-flight work.
 Features:
-  * progress narration (JARVIS speaks milestones at 25/50/75/100%)
+  * progress narration (D-VOICE speaks milestones at 25/50/75/100%)
   * watchdog: alerts when a task makes no progress for N seconds
-  * completion hooks: fires the Notifier when tasks end
+    (stalled tasks also fire the completion hooks with status="stalled")
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass, field
 
 from vocalis.config import MonitorConfig, VocalisConfig
 from vocalis.server.events import Event, EventBus, EventType, bus
+
+logger = logging.getLogger("vocalis.dvoice.monitor")
 
 MILESTONES = (0.25, 0.5, 0.75)
 
@@ -46,7 +49,8 @@ class TaskMonitor:
         self.on_completion = on_completion  # async callable(TrackedTask) -> None
         self.tracked: dict[str, TrackedTask] = {}
         self._queue = None
-        self._watchdog_task: asyncio.Task | None = None  # type: ignore[name-match]
+        self._watchdog_task: asyncio.Task | None = None
+        self._consume_task: asyncio.Task | None = None
         self._running = False
 
     # ------------------------------------------------------------------
@@ -54,14 +58,18 @@ class TaskMonitor:
         self._queue = self.bus.subscribe("task.*")
         self._running = True
         self._watchdog_task = asyncio.create_task(self._watchdog_loop())
-        asyncio.create_task(self._consume())
+        # Keep a reference so the consume loop is never garbage-collected.
+        self._consume_task = asyncio.create_task(self._consume())
 
     async def stop(self) -> None:
         self._running = False
         if self._queue is not None:
             self.bus.unsubscribe(self._queue)
-        if self._watchdog_task is not None:
-            self._watchdog_task.cancel()
+        pending = [t for t in (self._watchdog_task, self._consume_task) if t is not None]
+        for t in pending:
+            t.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     # ------------------------------------------------------------------
     async def _consume(self) -> None:
@@ -71,7 +79,10 @@ class TaskMonitor:
                 event: Event = await asyncio.wait_for(self._queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
-            await self._handle(event)
+            try:
+                await self._handle(event)
+            except Exception:
+                logger.exception("failed handling event %s", event.type)
 
     async def _handle(self, event: Event) -> None:
         data = event.data
@@ -103,7 +114,7 @@ class TaskMonitor:
                 try:
                     await self.on_completion(task)
                 except Exception:
-                    pass
+                    logger.exception("completion hook failed for %s", task_id)
 
     # ------------------------------------------------------------------
     async def _watchdog_loop(self) -> None:
@@ -123,13 +134,22 @@ class TaskMonitor:
                         f"Watchdog: {task.agent} has been silent for {stall:.0f} seconds."
                     )
                     task.last_update = now  # avoid alert spam
+                    # Surface stalls through the same notification channel
+                    # (voice chime / toast) as completions.
+                    if self.on_completion:
+                        stalled = self.tracked.pop(task.task_id, task)
+                        stalled.status = "stalled"
+                        try:
+                            await self.on_completion(stalled)
+                        except Exception:
+                            logger.exception("stall hook failed for %s", task.task_id)
 
     async def _narrate(self, text: str) -> None:
         if self.on_narration:
             try:
                 await self.on_narration(text)
             except Exception:
-                pass
+                logger.exception("narration failed")
 
     # ------------------------------------------------------------------
     def live_view(self) -> list[dict]:

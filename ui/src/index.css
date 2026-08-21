@@ -146,7 +146,7 @@ body {
 .msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 200px; }
 .msg { max-width: 86%; padding: 8px 12px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
 .msg.user { align-self: flex-end; background: rgba(34, 211, 238, 0.14); border: 1px solid rgba(34, 211, 238, 0.35); }
-.msg.jarvis { align-self: flex-start; background: rgba(129, 140, 248, 0.12); border: 1px solid rgba(129, 140, 248, 0.3); }
+.msg.dvoice { align-self: flex-start; background: rgba(129, 140, 248, 0.12); border: 1px solid rgba(129, 140, 248, 0.3); }
 .msg .who { font-size: 10px; letter-spacing: 0.15em; color: var(--dim); margin-bottom: 2px; }
 
 .composer { display: flex; gap: 8px; }
