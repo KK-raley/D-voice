@@ -80,7 +80,7 @@ export default function VoiceProfilePanel() {
         </label>
         <input
           type="range" min={-50} max={50} value={rate}
-          onChange={(e) => setDraft({ ...draft, rate: `${e.target.value >= 0 ? "+" : ""}${e.target.value}%` })}
+          onChange={(e) => setDraft({ ...draft, rate: `${Number(e.target.value) >= 0 ? "+" : ""}${e.target.value}%` })}
         />
         <label>
           <span>pitch 音调</span>
@@ -88,7 +88,7 @@ export default function VoiceProfilePanel() {
         </label>
         <input
           type="range" min={-20} max={20} value={pitch}
-          onChange={(e) => setDraft({ ...draft, pitch: `${e.target.value >= 0 ? "+" : ""}${e.target.value}Hz` })}
+          onChange={(e) => setDraft({ ...draft, pitch: `${Number(e.target.value) >= 0 ? "+" : ""}${e.target.value}Hz` })}
         />
         <label>
           <span>volume 音量</span>
@@ -96,7 +96,7 @@ export default function VoiceProfilePanel() {
         </label>
         <input
           type="range" min={-50} max={50} value={volume}
-          onChange={(e) => setDraft({ ...draft, volume: `${e.target.value >= 0 ? "+" : ""}${e.target.value}%` })}
+          onChange={(e) => setDraft({ ...draft, volume: `${Number(e.target.value) >= 0 ? "+" : ""}${e.target.value}%` })}
         />
         <label>
           <span>voice 音色</span>

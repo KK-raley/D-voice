@@ -85,6 +85,7 @@ dmypy.json
 node_modules/
 ui/dist/
 ui/.vite/
+ui/tsconfig.tsbuildinfo
 *.local
 
 # Runtime data (voiceprints are personal biometric data - never commit)
