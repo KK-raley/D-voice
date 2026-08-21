@@ -116,6 +116,7 @@ nul
 # Logs & traces
 logs/
 logs_*/
+logs_*.zip
 *.log
 .traces/
 
