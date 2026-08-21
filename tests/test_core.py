@@ -83,8 +83,9 @@ class TestVoiceGateMocked:
     def test_verify_accepts_owner(self, monkeypatch, tmp_path):
         pytest.importorskip("numpy")
         monkeypatch.setattr("vocalis.config.profiles_dir", lambda: tmp_path)
-        from vocalis.voice.gate import VoiceGate
         import json
+
+        from vocalis.voice.gate import VoiceGate
 
         # Write profiles directly (bypass resemblyzer dependency).
         alice = _fake_embedding(1)
@@ -112,8 +113,8 @@ class TestVoiceGateMocked:
 
 class TestCommander:
     def test_status_query_detection(self):
-        from vocalis.agents.registry import AgentRegistry
         from vocalis.agents.echo import EchoAgent
+        from vocalis.agents.registry import AgentRegistry
         from vocalis.dvoice.commander import Commander
 
         registry = AgentRegistry()
@@ -124,8 +125,8 @@ class TestCommander:
         assert not commander.plan("run the tests").is_status_query
 
     def test_question_vs_order(self):
-        from vocalis.agents.registry import AgentRegistry
         from vocalis.agents.echo import EchoAgent
+        from vocalis.agents.registry import AgentRegistry
         from vocalis.dvoice.commander import Commander
 
         registry = AgentRegistry()
@@ -135,8 +136,8 @@ class TestCommander:
         assert commander.plan("帮我重构测试文件").assignments
 
     def test_fanout_parse(self):
-        from vocalis.agents.registry import AgentRegistry
         from vocalis.agents.echo import EchoAgent
+        from vocalis.agents.registry import AgentRegistry
         from vocalis.dvoice.commander import Commander
 
         registry = AgentRegistry()

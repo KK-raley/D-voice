@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
-from vocalis.agents.base import AgentConnector, AgentStatus, TaskRecord
+from vocalis.agents.base import AgentConnector, TaskRecord
 from vocalis.server.events import EventBus, EventType, bus
 
 logger = logging.getLogger("vocalis.agents")

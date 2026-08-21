@@ -16,7 +16,6 @@ from vocalis.dvoice.assistant import DVoiceBrain
 from vocalis.dvoice.commander import Commander
 from vocalis.dvoice.monitor import TaskMonitor
 from vocalis.notify.notifier import Notifier
-from vocalis.server.events import EventType
 from vocalis.voice.tts import TTSService
 
 

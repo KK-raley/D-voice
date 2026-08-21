@@ -39,7 +39,7 @@ from vocalis.dvoice.assistant import DVoiceBrain
 from vocalis.dvoice.commander import Commander
 from vocalis.dvoice.monitor import TaskMonitor
 from vocalis.notify.notifier import Notifier
-from vocalis.server.events import Event, EventBus, EventType, bus
+from vocalis.server.events import Event, EventType, bus
 from vocalis.voice.tts import TTSService, VoiceProfile
 
 _REQUIRED_TOKEN = os.environ.get("VOCALIS_TOKEN", "")

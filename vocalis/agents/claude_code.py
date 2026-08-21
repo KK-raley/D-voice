@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from vocalis.agents.base import AgentConnector, TaskRecord
 
@@ -54,7 +55,7 @@ class ClaudeCodeAgent(AgentConnector):
                 line = await asyncio.wait_for(proc.stdout.readline(), timeout=self.timeout_s)
             except asyncio.TimeoutError:
                 proc.kill()
-                raise RuntimeError(f"claude-code exceeded {self.timeout_s}s watchdog")
+                raise RuntimeError(f"claude-code exceeded {self.timeout_s}s watchdog") from None
             if not line:
                 break
             text = line.decode("utf-8", errors="replace").rstrip()

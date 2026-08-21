@@ -16,8 +16,6 @@ def test_defaults(tmp_path: Path, monkeypatch):
 
 
 def test_roundtrip(tmp_path: Path, monkeypatch):
-    import os
-
     monkeypatch.setenv("VOCALIS_HOME", str(tmp_path / "home"))
     cfg = VocalisConfig()
     cfg.voice_gate.threshold = 0.9

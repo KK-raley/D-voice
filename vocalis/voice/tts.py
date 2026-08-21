@@ -16,7 +16,7 @@ import hashlib
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from vocalis.config import TTSConfig, VocalisConfig, audio_cache_dir
+from vocalis.config import VocalisConfig, audio_cache_dir
 from vocalis.server.events import EventBus, EventType, bus
 
 
@@ -30,9 +30,8 @@ class VoiceProfile:
     pitch: str = "+0Hz"    # e.g. "+4Hz" brighter
     volume: str = "+0%"    # e.g. "+20%" louder
 
-    def apply_delta(self, rate: int = 0, pitch: int = 0, volume: int = 0) -> "VoiceProfile":
+    def apply_delta(self, rate: int = 0, pitch: int = 0, volume: int = 0) -> VoiceProfile:
         def merge(current: str, delta: int, unit: str) -> str:
-            sign = current[0] if current[:1] in "+-" else "+"
             try:
                 value = int(current[1 : -len(unit)]) if unit in current else 0
             except ValueError:

@@ -87,7 +87,7 @@ def enroll(
         )
     except Exception as e:
         console.print(f"[red]Enrollment failed:[/] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -102,7 +102,7 @@ def gate(
         decision = VoiceGate().verify(audio, sample_rate=sr)
     except RuntimeError as e:
         console.print(f"[yellow]{e}[/]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     if json_out:
         console.print_json(json.dumps(decision.to_dict()))
         return
@@ -169,7 +169,7 @@ def run(
             decision = VoiceGate().verify(record(seconds=4.0))
         except RuntimeError as e:
             console.print(f"[yellow]{e}[/]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         if not decision.accepted:
             console.print(f"[red]VoiceGate rejected input[/] (sim={decision.similarity:.2f})")
             raise typer.Exit(1)

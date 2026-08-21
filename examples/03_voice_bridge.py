@@ -8,7 +8,7 @@ Shows the unified TTS layer: pick a profile, tune it, and have any text
 
 import asyncio
 
-from vocalis.voice.tts import TTSService, VoiceProfile
+from vocalis.voice.tts import TTSService
 
 
 async def main() -> None:

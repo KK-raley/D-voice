@@ -1,8 +1,8 @@
 # Vocalis - all-in-one runtime (backend + HUD)
 FROM node:20-alpine AS hud
 WORKDIR /app
-COPY ui/package.json ui/package-lock.json* ./
-RUN npm ci || npm install
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
 COPY ui/ ./
 RUN npm run build
 

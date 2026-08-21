@@ -121,7 +121,7 @@ class VocalisConfig:
         return _strip_none(asdict(self))
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "VocalisConfig":
+    def from_dict(cls, raw: dict[str, Any]) -> VocalisConfig:
         cfg = cls()
         for section, values in raw.items():
             if not hasattr(cfg, section):
@@ -143,7 +143,7 @@ class VocalisConfig:
         return path
 
     @classmethod
-    def load(cls) -> "VocalisConfig":
+    def load(cls) -> VocalisConfig:
         home = _home_dir()
         p = home / "config.toml"
         if p.exists():

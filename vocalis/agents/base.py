@@ -5,9 +5,10 @@ from __future__ import annotations
 import time
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator
+from typing import Any
 
 from vocalis.server.events import EventBus, EventType, bus
 
