@@ -228,9 +228,11 @@ dist/
 
 # Environments
 .env
+.env.*
 .venv/
 venv/
 env/
+*.key
 
 # Tooling caches
 .pytest_cache/
@@ -245,6 +247,7 @@ ui/dist/
 *.local
 
 # Runtime data (voiceprints are personal biometric data - never commit)
+.vocalis/
 *.voiceprofile
 *.npy
 data/profiles/
