@@ -1,6 +1,6 @@
 # Maintenance Plan · D-VOICE (Vocalis)
 
-> Living document — updated every iteration. Last reviewed: **2026-08-21** (v0.1.1 → v0.2 cycle)
+> Living document — updated every iteration. Last reviewed: **2026-08-22** (v0.2 cycle, week 1)
 >
 > This file is the project's heartbeat. Every merge to `main` should either
 > close an item here or add one. See [ROADMAP.md](ROADMAP.md) for feature
@@ -102,7 +102,24 @@ Status: **echo + openai (any OpenAI-compatible endpoint) + claude-code shipped.*
 
 ---
 
-## 3. Cadence & rituals
+## 3. Current cycle backlog · v0.2 (four weeks, started 2026-08-22)
+
+The standing tracks above are the long game; this section is the committed
+near-term plan. Update it every Monday: strike done items, re-scope slipped
+ones. A week is done when its items are merged with tests + docs.
+
+| Week | Theme | Items (from tracks) | Deliverable |
+|---|---|---|---|
+| **W1** | Voice you can see | B1 voice picker (locale/gender dropdown in HUD) · B2 one-click presets (focus/evening/presentation) | HUD screenshot → SHOWCASE refresh |
+| **W2** | The hook contract | C1 `docs/hooks.md` (every EventType + payload schema + `bus.on()` recipes) · C2 entry-point plugins (`vocalis.agents` group) with a sample plugin repo | Third parties can integrate without forking |
+| **W3** | Agent resilience | D2 connector health panel (last error/latency/auth) · D4 task cancellation propagating to subprocesses · E1 rate-limit `/api/command` + `/api/speak` | Failed agents degrade visibly, never hang |
+| **W4** | Ship v0.2 | B6 Piper offline TTS fallback (stretch) · A2 accessibility pass (focus rings, reduced-motion) · F3 event history replay on HUD connect · record SHOWCASE media · version bump + tag + CHANGELOG | Release v0.2 with demo video on README top |
+
+Slipped items roll to the next cycle's W1 — they are re-planned, not dropped.
+
+---
+
+## 4. Cadence & rituals
 
 | Rhythm | Activity |
 |---|---|
@@ -118,7 +135,7 @@ No exceptions — that is what makes maintenance *continuous* instead of
 
 ---
 
-## 4. Handoff notes for future maintainers
+## 5. Handoff notes for future maintainers
 
 - The event names are a public contract now (`dvoice.saying`, `task.progress`,
   ...). Renaming one is a breaking change: announce in CHANGELOG and keep a
