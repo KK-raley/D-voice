@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Wake-word detection ("Always Listening")**: new `vocalis listen` command
+  with two interchangeable backends — openWakeWord (small ONNX models, new
+  `wakeword` pip extra) and an ASR keyword fallback (zero extra deps) —
+  bilingual phrases ("hey D-VOICE" / "你好 D-VOICE"), NFKC/punctuation-tolerant
+  matching, per-detection cooldown, and graceful dependency-missing guidance.
+- **Voice catalog API** (`GET /api/voices?locale=&gender=`): enumerates
+  Edge-TTS voices with locale-prefix and gender filters, 5-minute server
+  cache, offline fallback list; HUD voice picker now browses the full
+  catalog instead of four hardcoded voices.
+- **One-click voice presets** (`GET/POST /api/voice/presets`): focus /
+  evening / presentation scenario bundles — one tap re-tunes rate, pitch,
+  volume and voice, persisted as normal profiles.
+- **Per-agent voices** (`tts.agent_voices`): narration picks a distinct
+  voice per agent (claude-code answers in Orion, echo in Aria) so parallel
+  tasks are distinguishable by ear.
+- **HUD accessibility & polish**: loading skeletons for feed/agents/tasks,
+  empty-state illustrations, `prefers-reduced-motion` support, keyboard
+  focus rings and ARIA live regions, per-agent color identity & avatars
+  (stable hash colors for unknown agents).
+- **Competitive analysis** (`docs/competitive-analysis.md`): survey of the
+  voice-assistant × agent ecosystem driving the improvement backlog.
 - **ERes2Net-large speaker verification** (SOTA, 3D-Speaker/ModelScope): new
   default `voice_gate.backend = "eres2net-large"` via the `voiceprint` extra;
   profiles are namespaced per backend (`{user}.{backend}.voiceprofile.json`)
@@ -21,14 +42,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dispatched as subprocesses with watchdog + streamed output narration.
 
 ### Changed
+- `--dim` HUD text color raised to meet WCAG AA 4.5:1 contrast.
+- `vocalis listen` degrades to rules-based guidance instead of tracebacks
+  when sounddevice/faster-whisper/openwakeword are missing.
 - **Rebrand**: the assistant brain is now **D-VOICE** (`vocalis.dvoice`,
   replacing `vocalis.jarvis`); HUD console, event names (`dvoice.saying`,
   `dvoice.command`) and docs updated accordingly.
 - Default brain model lowered to `qwen2.5:1.5b-instruct` (CPU-friendly).
 
+### Fixed
+- Rich markup injection in CLI output (bracketed text no longer eaten by
+  console styles).
+- Slider labels now properly associated with inputs (`htmlFor`/`id`);
+  profile cards keyboard-operable (Enter/Space).
+
 ### Planned
 - Streaming ASR with partial transcription (ETA v0.3)
-- Wake-word detection for always-on listening
 - Voice cloning via XTTS-v2 backend
 - Plugin system for third-party agent connectors
 

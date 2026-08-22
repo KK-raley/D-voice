@@ -42,11 +42,65 @@ class VoiceGateConfig:
 
 
 @dataclass
+class WakeWordConfig:
+    """Always-on wake-word detection ("hey D-VOICE").
+
+    backend: "openwakeword" (small ONNX models, ~10 MB RAM, pip install
+    openwakeword) or "asr" (keyword match on streaming transcription -
+    higher latency but zero extra deps beyond faster-whisper).
+    phrases: keyword forms matched (case-insensitive) by the asr backend.
+    """
+
+    enabled: bool = True
+    backend: str = "asr"
+    model: str = "hey_jarvis"  # openwakeword pretrained model name
+    threshold: float = 0.5
+    phrases: list[str] = field(
+        default_factory=lambda: ["hey d-voice", "d voice", "hey d voice", "你好 d-voice"]
+    )
+    cooldown_s: float = 2.0
+
+
+@dataclass
 class TTSConfig:
-    """Text-to-speech defaults and the active voice profile."""
+    """Text-to-speech defaults and the active voice profile.
+
+    presets: one-click scenario bundles; applying a preset switches
+    default_profile to the preset's name (presets are normal profiles).
+    agent_voices: agent name -> profile name; narration picks a distinct
+    voice per agent so parallel tasks are distinguishable by ear.
+    """
 
     engine: str = "edge"
     default_profile: str = "aria"
+    presets: dict[str, dict[str, Any]] = field(
+        default_factory=lambda: {
+            "focus": {
+                "voice": "zh-CN-YunxiNeural",
+                "rate": "+15%",
+                "pitch": "+0Hz",
+                "volume": "+0%",
+            },
+            "evening": {
+                "voice": "zh-CN-XiaoxiaoNeural",
+                "rate": "-10%",
+                "pitch": "-2Hz",
+                "volume": "-5%",
+            },
+            "presentation": {
+                "voice": "zh-CN-YunjianNeural",
+                "rate": "+0%",
+                "pitch": "+2Hz",
+                "volume": "+15%",
+            },
+        }
+    )
+    agent_voices: dict[str, str] = field(
+        default_factory=lambda: {
+            "claude-code": "orion",
+            "echo": "aria",
+        }
+    )
     profiles: dict[str, dict[str, Any]] = field(
         default_factory=lambda: {
             "aria": {
@@ -131,6 +185,7 @@ class MonitorConfig:
 @dataclass
 class VocalisConfig:
     voice_gate: VoiceGateConfig = field(default_factory=VoiceGateConfig)
+    wake_word: WakeWordConfig = field(default_factory=WakeWordConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
     asr: ASRConfig = field(default_factory=ASRConfig)
     brain: BrainConfig = field(default_factory=BrainConfig)

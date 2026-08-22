@@ -22,6 +22,28 @@ export interface VoiceProfileInfo {
   volume: string;
 }
 
+/** One entry of the Edge-TTS voice catalog (GET /api/voices). */
+export interface EdgeVoice {
+  ShortName: string;
+  Gender: string;
+  Locale: string;
+}
+
+/** Preset payload without the name key (GET /api/voice/presets values). */
+export interface VoicePresetInfo {
+  voice: string;
+  rate: string;
+  pitch: string;
+  volume: string;
+}
+
+/** Response of POST /api/voice/presets. */
+export interface ApplyPresetResult {
+  ok: boolean;
+  profile: VoiceProfileInfo;
+  default_profile: string;
+}
+
 export function useEventStream(maxEvents = 120) {
   const [events, setEvents] = useState<BusEvent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -70,6 +92,28 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`${path} ${detail}`);
   }
   return resp.json() as Promise<T>;
+}
+
+/** Edge-TTS voice catalog; optional locale (prefix, e.g. "zh") and gender filters. */
+export function fetchVoices(locale?: string, gender?: string): Promise<EdgeVoice[]> {
+  const params = new URLSearchParams();
+  if (locale) params.set("locale", locale);
+  if (gender) params.set("gender", gender);
+  const qs = params.toString();
+  return api<EdgeVoice[]>(`/api/voices${qs ? `?${qs}` : ""}`);
+}
+
+/** Scenario presets keyed by name (focus / evening / presentation). */
+export function fetchVoicePresets(): Promise<Record<string, VoicePresetInfo>> {
+  return api<Record<string, VoicePresetInfo>>("/api/voice/presets");
+}
+
+/** Apply a preset: upserts it as a profile and makes it the default. */
+export function applyVoicePreset(name: string): Promise<ApplyPresetResult> {
+  return api<ApplyPresetResult>("/api/voice/presets", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
 }
 
 export function useAgents(events: BusEvent[]) {

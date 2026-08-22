@@ -1,6 +1,6 @@
 # Maintenance Plan · D-VOICE (Vocalis)
 
-> Living document — updated every iteration. Last reviewed: **2026-08-22** (v0.2 cycle, week 1)
+> Living document — updated every iteration. Last reviewed: **2026-08-22** (v0.2 cycle, week 1 — wake-word + Track A/B batch shipped; see [docs/competitive-analysis.md](docs/competitive-analysis.md) for the survey that drove it)
 >
 > This file is the project's heartbeat. Every merge to `main` should either
 > close an item here or add one. See [ROADMAP.md](ROADMAP.md) for feature
@@ -31,31 +31,32 @@ opening an issue referencing the track (e.g. `ui-polish`).
 
 ### Track A · UI aesthetics (`ui-polish`) — HUD / visual identity
 
-Status: **v0.1 baseline shipped** — dark HUD, live waveform, agent feed,
-Voice Studio, chat console.
+Status: **v0.2 batch shipped (2026-08-22)** — dark HUD, live waveform, agent
+feed, Voice Studio, chat console; skeletons + a11y + agent identity landed.
 
-| # | Improvement | Priority | ETA |
+| # | Improvement | Priority | Status |
 |---|---|---|---|
-| A1 | Loading skeletons + empty-state illustrations (feed/agents/tasks panels) | med | v0.2 |
-| A2 | Reduce motion / accessibility pass: focus rings, `prefers-reduced-motion`, ARIA labels on live regions | **high** | v0.2 |
+| A1 | Loading skeletons + empty-state illustrations (feed/agents/tasks panels) | med | ✅ shipped 08-22 |
+| A2 | Reduce motion / accessibility pass: focus rings, `prefers-reduced-motion`, ARIA labels on live regions | **high** | ✅ shipped 08-22 |
 | A3 | Light theme + theme persistence (localStorage) | low | v0.3 |
-| A4 | Agent avatars & color identity per connector (echo/openai/claude-code) | med | v0.2 |
+| A4 | Agent avatars & color identity per connector (echo/openai/claude-code + hash for unknown) | med | ✅ shipped 08-22 |
 | A5 | Mobile/responsive HUD (grid → single column under 720px) | med | v0.3 |
 | A6 | Animated task timeline view (reuse the stable task-id timeline data) | low | v0.3 |
 
 ### Track B · Voice output characteristics (`voice-features`) — TTS selectable features
 
-Status: **v0.1 baseline shipped** — 3 built-in `VoiceProfile`s, live rate/pitch/volume
-tuning in Voice Studio + CLI.
+Status: **v0.2 batch shipped (2026-08-22)** — voice catalog, presets, and
+per-agent voices landed on top of the v0.1 profile baseline.
 
-| # | Improvement | Priority | ETA |
+| # | Improvement | Priority | Status |
 |---|---|---|---|
-| B1 | **Voice picker**: enumerate Edge-TTS voices by locale/gender in the HUD (dropdown, not hand-typed) | **high** | v0.2 |
-| B2 | **Profile presets**: "focus / evening / presentation" one-click presets mapping to profile bundles | **high** | v0.2 |
+| B1 | **Voice picker**: enumerate Edge-TTS voices by locale/gender in the HUD (dropdown, not hand-typed) | **high** | ✅ shipped 08-22 (`GET /api/voices` + filters) |
+| B2 | **Profile presets**: "focus / evening / presentation" one-click presets mapping to profile bundles | **high** | ✅ shipped 08-22 (`POST /api/voice/presets`) |
 | B3 | SSML breaks & emphasis control for narration cadence | med | v0.3 |
-| B4 | Per-agent voices (claude-code answers in Orion, monitor alerts in Aria) | med | v0.2 |
+| B4 | Per-agent voices (claude-code answers in Orion, monitor alerts in Aria) | med | ✅ shipped 08-22 (`agent_voices` mapping) |
 | B5 | Emotional tone parameter once XTTS-v2 backend lands (roadmap v0.3) | low | v0.3 |
-| B6 | Local offline TTS fallback (Piper) so `never go mute` holds without internet | **high** | v0.2 |
+| B6 | Local offline TTS fallback (Piper) so `never go mute` holds without internet | **high** | v0.2 W4 (planned) |
+| B7 | Wake-word → TTS handoff: confirmation chime/phrase when woken ("我在") | med | v0.2 W4 |
 
 ### Track C · Exposed hooks & extensibility (`hooks`) — the integration surface
 
@@ -110,10 +111,10 @@ ones. A week is done when its items are merged with tests + docs.
 
 | Week | Theme | Items (from tracks) | Deliverable |
 |---|---|---|---|
-| **W1** | Voice you can see | B1 voice picker (locale/gender dropdown in HUD) · B2 one-click presets (focus/evening/presentation) | HUD screenshot → SHOWCASE refresh |
+| **W0** ✅ | Always listening (pulled forward from ROADMAP) | Wake-word module (`vocalis listen`, openWakeWord + ASR fallback, bilingual phrases) · B1 voice picker · B2 presets · B4 per-agent voices · A1 skeletons · A2 a11y · A4 agent identity | Competitive-analysis-driven batch; 60/60 tests green |
 | **W2** | The hook contract | C1 `docs/hooks.md` (every EventType + payload schema + `bus.on()` recipes) · C2 entry-point plugins (`vocalis.agents` group) with a sample plugin repo | Third parties can integrate without forking |
 | **W3** | Agent resilience | D2 connector health panel (last error/latency/auth) · D4 task cancellation propagating to subprocesses · E1 rate-limit `/api/command` + `/api/speak` | Failed agents degrade visibly, never hang |
-| **W4** | Ship v0.2 | B6 Piper offline TTS fallback (stretch) · A2 accessibility pass (focus rings, reduced-motion) · F3 event history replay on HUD connect · record SHOWCASE media · version bump + tag + CHANGELOG | Release v0.2 with demo video on README top |
+| **W4** | Ship v0.2 | B6 Piper offline TTS fallback (stretch) · B7 wake-word confirmation phrase · F3 event history replay on HUD connect · record SHOWCASE media · version bump + tag + CHANGELOG | Release v0.2 with demo video on README top |
 
 Slipped items roll to the next cycle's W1 — they are re-planned, not dropped.
 

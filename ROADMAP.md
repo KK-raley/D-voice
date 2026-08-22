@@ -14,7 +14,14 @@ Vocalis is under active development. This document tracks what is shipping next.
 
 ## v0.2 — "Always Listening" (Q4 2026)
 
-- [ ] 🚧 Wake-word detection (openWakeWord / Porcupine) — hands-free activation
+- [x] ✅ Wake-word detection — `vocalis listen` with openWakeWord backend
+      (pip extra `wakeword`) + ASR keyword fallback, cooldown, bilingual
+      phrases ("hey D-VOICE" / "你好 D-VOICE")
+- [x] ✅ Voice picker & presets — `/api/voices` catalog (locale/gender
+      filter), focus/evening/presentation one-click presets, per-agent
+      voices (hear which agent speaks)
+- [x] ✅ HUD accessibility & polish — loading skeletons, reduced-motion,
+      focus rings, ARIA live regions, per-agent color identity
 - [ ] 🚧 Streaming ASR with partial hypotheses for real-time subtitles
 - [ ] 📋 Multi-user household mode: per-user voice profiles + personalized replies
 - [ ] 📋 Roll-call authentication: liveness check (randomized prompt replay)

@@ -59,6 +59,60 @@ class SpeakResult:
     error: str | None = None
 
 
+# -- voice enumeration ------------------------------------------------
+FALLBACK_VOICES: list[dict[str, str]] = [
+    {"ShortName": "en-US-AriaNeural", "Gender": "Female", "Locale": "en-US"},
+    {"ShortName": "en-US-GuyNeural", "Gender": "Male", "Locale": "en-US"},
+    {"ShortName": "zh-CN-XiaoxiaoNeural", "Gender": "Female", "Locale": "zh-CN"},
+    {"ShortName": "zh-CN-YunxiNeural", "Gender": "Male", "Locale": "zh-CN"},
+]
+
+
+async def list_voices() -> list[dict]:
+    """Enumerate Edge-TTS voices as ``{ShortName, Gender, Locale}`` dicts.
+
+    Results are normalized to exactly those three keys and sorted by
+    Locale. When edge-tts is not installed (or the network call fails) a
+    small built-in fallback list is returned so the voice picker always
+    has something to offer.
+    """
+    voices: list[dict] = []
+    try:
+        import edge_tts
+
+        raw = await edge_tts.list_voices()
+        voices = [
+            {
+                "ShortName": str(v.get("ShortName", "")),
+                "Gender": str(v.get("Gender", "")),
+                "Locale": str(v.get("Locale", "")),
+            }
+            for v in raw
+        ]
+    except Exception:
+        voices = [dict(v) for v in FALLBACK_VOICES]
+    return sorted(voices, key=lambda v: (v["Locale"], v["ShortName"]))
+
+
+def filter_voices(
+    voices: list[dict], locale: str | None = None, gender: str | None = None
+) -> list[dict]:
+    """Filter a voice list for the picker (pure function).
+
+    ``locale`` is a prefix match ("zh" matches zh-CN / zh-TW), ``gender``
+    an exact case-insensitive match. Missing / empty filters return the
+    list unchanged.
+    """
+    out = voices
+    if locale:
+        prefix = locale.lower()
+        out = [v for v in out if str(v.get("Locale", "")).lower().startswith(prefix)]
+    if gender:
+        target = gender.lower()
+        out = [v for v in out if str(v.get("Gender", "")).lower() == target]
+    return out
+
+
 class TTSEngine:  # pragma: no cover - interface
     name: str = "base"
 
@@ -126,6 +180,30 @@ class TTSService:
             "volume": profile.volume,
         }
         self.config.save()
+
+    def apply_preset(self, name: str) -> VoiceProfile:
+        """Upsert a scenario preset as a live profile and make it the default.
+
+        Presets are one-click bundles (focus / evening / presentation)
+        defined in ``config.tts.presets``; applying one materializes it as
+        a normal profile, persists it, and switches ``default_profile``.
+        """
+        presets = self.config.tts.presets
+        if name not in presets:
+            raise KeyError(f"unknown preset '{name}' - available: {sorted(presets)}")
+        profile = VoiceProfile(name=name, **dict(presets[name]))
+        self.upsert_profile(profile)
+        self.config.tts.default_profile = name
+        self.config.save()
+        return profile
+
+    def profile_for_agent(self, agent: str) -> str:
+        """Profile name an agent should speak with; ``default_profile`` fallback.
+
+        Per-agent voices let parallel tasks be distinguished by ear
+        ("listen and know which agent is talking").
+        """
+        return self.config.tts.agent_voices.get(agent, self.config.tts.default_profile)
 
     # -- synthesis -----------------------------------------------------
     async def synthesize(

@@ -65,8 +65,13 @@ voiceprint = [
 local-brain = [
     "ollama>=0.3",
 ]
+wakeword = [
+    # Always-on wake-word detection ("hey D-VOICE") via openwakeword
+    "openwakeword>=0.5",
+    "tflite-runtime>=2.10; platform_system != 'Windows'",
+]
 all = [
-    "vocalis-voice-agent[voice,local-brain]",
+    "vocalis-voice-agent[voice,local-brain,wakeword]",
 ]
 dev = [
     "pytest>=8.0",

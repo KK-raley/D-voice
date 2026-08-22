@@ -1,4 +1,5 @@
 import type { AgentInfo, BusEvent } from "../api";
+import { agentIdentity } from "./AgentFeed";
 
 interface TaskView {
   id: string;
@@ -52,13 +53,15 @@ export default function HUD({
   }
   const live = [...tasks.values()].filter((t) => t.status === "running").slice(0, 3);
   const busy = agents.some((a) => a.status === "busy");
+  // agents fetch has not returned yet -> show skeleton placeholders
+  const loading = agents.length === 0;
 
   return (
     <div className="panel">
       <h2>System HUD</h2>
 
       {/* Waveform */}
-      <div className="wave-wrap">
+      <div className="wave-wrap" aria-hidden="true">
         {Array.from({ length: 36 }).map((_, i) => (
           <span
             key={i}
@@ -71,28 +74,73 @@ export default function HUD({
         ))}
       </div>
 
-      {/* Agents */}
-      {agents.map((a) => (
-        <div className="agent-row" key={a.name}>
-          <span className={`dot ${a.status === "idle" ? "on" : a.status === "offline" ? "off" : "on"}`} />
-          <span className="name">{a.name}</span>
-          <span className={`status-badge status-${a.status}`}>{a.status}</span>
-          <span className="desc">{a.description}</span>
-        </div>
-      ))}
+      {/* Agents (skeleton cards while the agents fetch is in flight) */}
+      {loading &&
+        [0, 1, 2].map((i) => (
+          <div className="agent-row skeleton-row" key={`sk-agent-${i}`} aria-hidden="true">
+            <span className="skeleton sk-avatar" />
+            <span className="skeleton sk-name" />
+            <span className="skeleton sk-badge" />
+            <span className="skeleton sk-desc" />
+          </div>
+        ))}
+      {agents.map((a) => {
+        const ident = agentIdentity(a.name);
+        return (
+          <div className="agent-row" key={a.name}>
+            <span className={`dot ${a.status === "idle" ? "on" : a.status === "offline" ? "off" : "on"}`} />
+            <span
+              className="agent-avatar"
+              style={{ color: ident.color }}
+              title={a.name}
+              aria-hidden="true"
+            >
+              {ident.avatar}
+            </span>
+            <span className="name">{a.name}</span>
+            <span className={`status-badge status-${a.status}`}>{a.status}</span>
+            <span className="desc">{a.description}</span>
+          </div>
+        );
+      })}
 
-      {/* Live task bars */}
-      {live.map((t) => (
-        <div className="taskbar" key={t.id}>
-          <div className="meta">
-            <span>{t.agent}</span>
-            <span>{t.currentStep.slice(0, 46)}</span>
+      {/* Live task bars (skeleton bars until agent data is ready) */}
+      {loading &&
+        [0, 1].map((i) => (
+          <div className="taskbar" key={`sk-task-${i}`} aria-hidden="true">
+            <div className="meta">
+              <span className="skeleton sk-meta-sm" />
+              <span className="skeleton sk-meta-md" />
+            </div>
+            <div className="bar">
+              <div className="skeleton sk-bar-fill" />
+            </div>
           </div>
-          <div className="bar">
-            <div className="fill" style={{ width: `${t.progress * 100}%` }} />
+        ))}
+      {live.map((t) => {
+        const ident = agentIdentity(t.agent);
+        return (
+          <div className="taskbar" key={t.id}>
+            <div className="meta">
+              <span className="meta-agent">
+                <span
+                  className="agent-avatar"
+                  style={{ color: ident.color }}
+                  title={t.agent}
+                  aria-hidden="true"
+                >
+                  {ident.avatar}
+                </span>
+                {t.agent}
+              </span>
+              <span>{t.currentStep.slice(0, 46)}</span>
+            </div>
+            <div className="bar">
+              <div className="fill" style={{ width: `${t.progress * 100}%` }} />
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       <div style={{ marginTop: 10, fontSize: 12, color: "var(--dim)" }}>
         bus: {connected ? "streaming" : "reconnecting…"} · agents: {agents.length} · in-flight: {live.length}

@@ -48,7 +48,7 @@ export default function ChatPanel() {
     <div className="panel">
       <h2>D-VOICE Console</h2>
       <div className="chat">
-        <div className="msgs" ref={listRef}>
+        <div className="msgs" ref={listRef} role="log" aria-live="polite" aria-busy={busy}>
           {msgs.map((m, i) => (
             <div className={`msg ${m.who}`} key={i}>
               <div className="who">{m.who === "user" ? "YOU" : "D-VOICE"}</div>
@@ -58,19 +58,7 @@ export default function ChatPanel() {
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              onClick={() => send(s)}
-              style={{
-                fontSize: 12,
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: "1px solid var(--line)",
-                background: "transparent",
-                color: "var(--dim)",
-                cursor: "pointer",
-              }}
-            >
+            <button key={s} className="chip" onClick={() => send(s)}>
               {s}
             </button>
           ))}
@@ -79,6 +67,7 @@ export default function ChatPanel() {
           <input
             value={input}
             placeholder={busy ? "D-VOICE 处理中…" : "说点什么，或下达指令（回车发送）"}
+            aria-label="D-VOICE 指令输入"
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send(input)}
             disabled={busy}

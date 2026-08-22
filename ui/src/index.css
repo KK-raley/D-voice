@@ -132,6 +132,7 @@ body {
 .wave-wrap { display: flex; align-items: center; justify-content: center; height: 120px; gap: 3px; }
 .wave-wrap span {
   width: 4px;
+  height: 30%;
   border-radius: 3px;
   background: linear-gradient(180deg, var(--cyan), var(--indigo));
   animation: wave 1.1s ease-in-out infinite;
@@ -161,6 +162,7 @@ body {
   outline: none;
 }
 .composer input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12); }
+.composer input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 
 .composer button {
   background: linear-gradient(90deg, rgba(34,211,238,0.9), rgba(129,140,248,0.9));
@@ -187,4 +189,155 @@ body {
 
 @media (max-width: 1000px) {
   .hud { grid-template-columns: 1fr; }
+}
+
+/* ---------- A1: skeletons ---------- */
+
+.skeleton {
+  display: inline-block;
+  border-radius: 6px;
+  background: linear-gradient(
+    100deg,
+    rgba(148, 163, 184, 0.08) 30%,
+    rgba(148, 163, 184, 0.2) 50%,
+    rgba(148, 163, 184, 0.08) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* feed placeholder rows */
+.sk-item { display: flex; align-items: center; gap: 10px; }
+.sk-t { width: 42px; height: 10px; flex: none; }
+.sk-line { height: 10px; flex: 1; min-width: 40px; }
+.empty-skeletons { display: flex; flex-direction: column; gap: 6px; }
+
+/* HUD agent-row skeleton card */
+.skeleton-row { pointer-events: none; }
+.sk-avatar { width: 18px; height: 18px; border-radius: 50%; flex: none; }
+.sk-name { width: 64px; height: 12px; }
+.sk-badge { width: 44px; height: 16px; border-radius: 999px; }
+.sk-desc { width: 118px; height: 10px; margin-left: auto; }
+
+/* HUD taskbar skeleton */
+.sk-meta-sm { width: 56px; height: 10px; }
+.sk-meta-md { width: 140px; height: 10px; }
+.sk-bar-fill { height: 100%; width: 45%; border-radius: 4px; display: block; }
+
+/* ---------- A1: empty state ---------- */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 22px 10px 12px;
+  text-align: center;
+}
+
+.empty-glyph {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.empty-glyph::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  border: 1px dashed var(--cyan);
+  opacity: 0.45;
+}
+.empty-glyph::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 10px var(--cyan);
+}
+
+.empty-title {
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.75;
+}
+.empty-hint { font-size: 13px; color: var(--dim); }
+.empty-hint em { color: var(--cyan); font-style: italic; }
+
+/* ---------- A4: agent identity avatar ---------- */
+
+.agent-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font-size: 10px;
+  line-height: 1;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  text-shadow: 0 0 6px currentColor;
+}
+
+.feed-item .agent-avatar {
+  width: 16px;
+  height: 16px;
+  font-size: 9px;
+  vertical-align: -3px;
+  margin-right: 5px;
+}
+
+.taskbar .meta-agent { display: inline-flex; align-items: center; gap: 5px; }
+.taskbar .meta-agent .agent-avatar { width: 14px; height: 14px; font-size: 8px; }
+
+/* ---------- A2: accessibility ---------- */
+
+/* keyboard focus ring for all interactive elements */
+:focus-visible,
+.composer input:focus-visible,
+.sliders input:focus-visible,
+.sliders select:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* suggestion chips (moved from inline styles in ChatPanel) */
+.chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.chip:hover { color: var(--cyan); border-color: var(--cyan); }
+
+/* honour reduced-motion: kill all animations/transitions (incl. skeleton shimmer) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
