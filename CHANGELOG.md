@@ -7,10 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **ERes2Net-large speaker verification** (SOTA, 3D-Speaker/ModelScope): new
+  default `voice_gate.backend = "eres2net-large"` via the `voiceprint` extra;
+  profiles are namespaced per backend (`{user}.{backend}.voiceprofile.json`)
+  with per-backend calibrated thresholds. Resemblyzer remains as a light
+  fallback and is auto-selected when the `voiceprint` extra is absent.
+- **Brain multi-backend**: `brain.backend = "ollama" | "openai-compatible"`
+  — D-VOICE can now ride llama.cpp-server, LM Studio, vLLM or any
+  OpenAI-compatible endpoint (Gemma, Qwen, Llama 3.2 ... on CPU laptops).
+- **Generic CLI agent connector** (`cli_agents` in config.toml): bridge
+  codex / opencode / aider / any terminal agent by voice; instructions are
+  dispatched as subprocesses with watchdog + streamed output narration.
+
 ### Changed
 - **Rebrand**: the assistant brain is now **D-VOICE** (`vocalis.dvoice`,
   replacing `vocalis.jarvis`); HUD console, event names (`dvoice.saying`,
   `dvoice.command`) and docs updated accordingly.
+- Default brain model lowered to `qwen2.5:1.5b-instruct` (CPU-friendly).
 
 ### Planned
 - Streaming ASR with partial transcription (ETA v0.3)

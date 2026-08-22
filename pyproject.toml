@@ -55,6 +55,13 @@ voice = [
     "sounddevice>=0.4.6",
     "scipy>=1.10",
 ]
+voiceprint = [
+    # ERes2Net-large (3D-Speaker SOTA) speaker verification via ModelScope
+    "modelscope>=1.14",
+    "torch>=2.1",
+    "torchaudio>=2.1",
+    "scipy>=1.10",
+]
 local-brain = [
     "ollama>=0.3",
 ]

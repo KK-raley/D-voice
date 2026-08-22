@@ -10,7 +10,8 @@ from vocalis.config import VocalisConfig
 def test_defaults(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VOCALIS_HOME", str(tmp_path))
     cfg = VocalisConfig()
-    assert cfg.voice_gate.threshold == 0.80
+    assert cfg.voice_gate.backend == "eres2net-large"
+    assert cfg.voice_gate.threshold is None  # per-backend default applies
     assert cfg.tts.default_profile == "aria"
     assert cfg.brain.model.startswith("qwen")
 

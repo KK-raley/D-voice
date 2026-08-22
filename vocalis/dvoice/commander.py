@@ -84,8 +84,15 @@ class Commander:
 
     def _parse_fanout(self, text: str) -> list[tuple[str, str]]:
         known = {name: name for name in self.registry.connectors}
-        # alias map for natural speech
-        aliases = {"claude": "claude-code", "code": "claude-code", "gpt": "openai"}
+        # alias map for natural speech (codex/opencode resolve if configured
+        # as cli_agents in config.toml)
+        aliases = {
+            "claude": "claude-code",
+            "code": "claude-code",
+            "gpt": "openai",
+            "codex": "codex",
+            "opencode": "opencode",
+        }
         segments: list[str] = re.split(r"[;；]|然后|以及|并且|, and ", text)
         assignments: list[tuple[str, str]] = []
         for seg in segments:

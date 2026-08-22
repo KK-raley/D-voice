@@ -1,20 +1,31 @@
-"""DVoiceBrain: a local small language model (via Ollama) that acts as the
-always-on operations narrator and conversational layer.
+"""DVoiceBrain: a local small language model that acts as the always-on
+operations narrator and conversational layer.
+
+Two backend flavors are supported:
+
+* ``ollama`` - native Ollama API (qwen2.5, gemma3, llama3.2, ... pulled via
+  ``ollama pull``; CPU-only laptops are fine with 0.5b-1.5b q4 models).
+* ``openai-compatible`` - any server speaking the OpenAI chat-completions
+  protocol: llama.cpp-server, LM Studio, vLLM, Ollama's /v1 endpoint, or a
+  remote API. This lets D-VOICE ride any small model you can serve.
 
 Responsibilities:
   * answer the user's questions in real time (fully local, private)
   * translate raw agent progress events into natural spoken narration
   * summarize system status on demand ("What's going on right now?")
 
-If Ollama is unreachable the brain degrades gracefully to deterministic
-rule-based templates, so the ecosystem never goes mute. Degradation is
-always logged and surfaced as a ``monitor.alert`` event - never silent.
+If the model server is unreachable the brain degrades gracefully to
+deterministic rule-based templates, so the ecosystem never goes mute.
+Degradation is always logged and surfaced as a ``monitor.alert`` event.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
+
+import httpx
 
 from vocalis.agents.registry import AgentRegistry
 from vocalis.config import BrainConfig, VocalisConfig
@@ -62,6 +73,8 @@ class DVoiceBrain:
     # Backend probing
     # ------------------------------------------------------------------
     def _get_ollama(self):
+        if self.brain_cfg.backend != "ollama":
+            return None
         if not self.brain_cfg.enabled:
             return None
         if self._ollama is not None:
@@ -75,10 +88,54 @@ class DVoiceBrain:
             self._ollama = ollama.AsyncClient(host=self.brain_cfg.host)
             return self._ollama
         except Exception as e:
-            logger.warning("Ollama client unavailable (%s); using rule-based replies", e)
+            logger.warning("Ollama client unavailable (%s); using fallback replies", e)
             return None
 
+    def _openai_base(self) -> str:
+        base = self.brain_cfg.base_url
+        if not base:
+            raise ValueError(
+                "brain.backend='openai-compatible' needs brain.base_url "
+                "(e.g. http://localhost:8080/v1 for llama.cpp-server, "
+                "http://localhost:1234/v1 for LM Studio)"
+            )
+        return base.rstrip("/")
+
+    def _openai_headers(self) -> dict[str, str]:
+        key = os.environ.get(self.brain_cfg.api_key_env, "not-needed")
+        return {"Authorization": f"Bearer {key}"}
+
+    async def _chat_openai(self, messages: list[dict[str, str]]) -> str:
+        payload = {
+            "model": self.brain_cfg.model,
+            "messages": messages,
+            "temperature": self.brain_cfg.temperature,
+            "max_tokens": self.brain_cfg.max_tokens,
+        }
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{self._openai_base()}/chat/completions",
+                json=payload,
+                headers=self._openai_headers(),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        return str(content or "").strip()
+
     async def available(self) -> bool:
+        if not self.brain_cfg.enabled:
+            return False
+        if self.brain_cfg.backend == "openai-compatible":
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(
+                        f"{self._openai_base()}/models",
+                        headers=self._openai_headers(),
+                    )
+                    return resp.status_code < 500
+            except Exception:
+                return False
         client = self._get_ollama()
         if client is None:
             return False
@@ -101,35 +158,46 @@ class DVoiceBrain:
     async def chat(self, user_text: str, context: dict[str, Any] | None = None) -> str:
         """Real-time conversational reply (question answering)."""
         context = context or {}
-        client = self._get_ollama()
-        if client is not None:
+        messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        if context:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "Live system context:\n"
+                    + "\n".join(f"- {k}: {v}" for k, v in context.items()),
+                }
+            )
+        messages.extend(self.history[-8:])
+        messages.append({"role": "user", "content": user_text})
+
+        if self.brain_cfg.backend == "openai-compatible":
             try:
-                messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-                if context:
-                    messages.append(
-                        {
-                            "role": "system",
-                            "content": "Live system context:\n"
-                            + "\n".join(f"- {k}: {v}" for k, v in context.items()),
-                        }
-                    )
-                messages.extend(self.history[-8:])
-                messages.append({"role": "user", "content": user_text})
-                resp = await client.chat(
-                    model=self.brain_cfg.model,
-                    messages=messages,
-                    options={
-                        "temperature": self.brain_cfg.temperature,
-                        "num_predict": self.brain_cfg.max_tokens,
-                    },
-                )
-                reply = _first(resp).strip()
+                reply = await self._chat_openai(messages)
                 if not reply:
                     raise ValueError("empty reply from local model")
                 self._remember(user_text, reply)
                 return reply
             except Exception as e:
                 await self._degrade(str(e))
+        else:
+            client = self._get_ollama()
+            if client is not None:
+                try:
+                    resp = await client.chat(
+                        model=self.brain_cfg.model,
+                        messages=messages,
+                        options={
+                            "temperature": self.brain_cfg.temperature,
+                            "num_predict": self.brain_cfg.max_tokens,
+                        },
+                    )
+                    reply = _first(resp).strip()
+                    if not reply:
+                        raise ValueError("empty reply from local model")
+                    self._remember(user_text, reply)
+                    return reply
+                except Exception as e:
+                    await self._degrade(str(e))
         if self.brain_cfg.fallback_to_rules:
             reply = await self._rule_reply(user_text, context)
             self._remember(user_text, reply)

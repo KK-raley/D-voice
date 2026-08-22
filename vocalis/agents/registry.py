@@ -84,7 +84,9 @@ class AgentRegistry:
         }
 
 
-def build_default_registry(event_bus: EventBus | None = None) -> AgentRegistry:
+def build_default_registry(
+    event_bus: EventBus | None = None, config: Any = None
+) -> AgentRegistry:
     """Registry pre-loaded with the offline demo agent + any optional integrations."""
     registry = AgentRegistry(event_bus)
     from vocalis.agents.echo import EchoAgent
@@ -102,4 +104,25 @@ def build_default_registry(event_bus: EventBus | None = None) -> AgentRegistry:
         registry.register(ClaudeCodeAgent(event_bus))
     except Exception:
         logger.debug("claude-code connector unavailable", exc_info=True)
+
+    # User-declared CLI agents (codex / opencode / aider / ...) from config.toml.
+    try:
+        if config is None:
+            from vocalis.config import VocalisConfig
+
+            config = VocalisConfig.load()
+        for entry in getattr(config, "cli_agents", []) or []:
+            from vocalis.agents.cli_agent import GenericCLIAgent
+
+            registry.register(
+                GenericCLIAgent(
+                    name=entry.name,
+                    command=list(entry.command),
+                    event_bus=event_bus,
+                    timeout_s=entry.timeout_s,
+                )
+            )
+            logger.info("registered CLI agent %r -> %s", entry.name, entry.command)
+    except Exception:
+        logger.warning("failed to load cli_agents from config", exc_info=True)
     return registry

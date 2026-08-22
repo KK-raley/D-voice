@@ -28,11 +28,15 @@ def _home_dir() -> Path:
 class VoiceGateConfig:
     """Speaker-verification tuning.
 
-    threshold: cosine similarity required to accept a voice. 0.80 is a good
-    balance for Resemblyzer d-vectors; raise it for tighter security.
+    backend: embedding model - "eres2net-large" (3D-Speaker SOTA, needs the
+    ``voiceprint`` extra) or "resemblyzer" (light d-vectors, ``voice`` extra).
+    threshold: cosine similarity required to accept a voice. ``None`` uses
+    the backend's calibrated default (0.55 for ERes2Net-large, 0.80 for
+    Resemblyzer); override after a real enrollment session if needed.
     """
 
-    threshold: float = 0.80
+    backend: str = "eres2net-large"
+    threshold: float | None = None
     min_enroll_utterances: int = 3
     sample_rate: int = 16000
 
@@ -77,15 +81,42 @@ class ASRConfig:
 
 @dataclass
 class BrainConfig:
-    """Local small-model (D-VOICE brain) configuration via Ollama."""
+    """Local small-model (D-VOICE brain) configuration.
 
+    backend: "ollama" (native API) or "openai-compatible" (any server that
+    speaks the OpenAI chat-completions protocol: llama.cpp, LM Studio, vLLM,
+    Ollama's own /v1 endpoint, remote APIs...).
+    host: Ollama base URL (backend="ollama").
+    base_url: OpenAI-compatible base URL, e.g. http://localhost:8080/v1 for
+    llama.cpp-server or http://localhost:1234/v1 for LM Studio.
+    api_key_env: env var holding the API key (optional for local servers).
+    CPU-friendly models: qwen2.5:0.5b/1.5b, gemma3:1b, llama3.2:1b via
+    Ollama; any GGUF q4 quant via llama.cpp.
+    """
+
+    backend: str = "ollama"
     enabled: bool = True
     host: str = "http://localhost:11434"
-    model: str = "qwen2.5:3b-instruct"
+    base_url: str | None = None
+    api_key_env: str = "DVOICE_API_KEY"
+    model: str = "qwen2.5:1.5b-instruct"
     temperature: float = 0.6
     max_tokens: int = 512
-    # Rule-based fallback when Ollama is unreachable.
+    # Rule-based fallback when the local model server is unreachable.
     fallback_to_rules: bool = True
+
+
+@dataclass
+class CliAgentConfig:
+    """A CLI coding agent (codex / opencode / aider / ...) bridged by subprocess.
+
+    command may contain a "{instruction}" placeholder; without one the
+    instruction is appended as the final argument.
+    """
+
+    name: str = "codex"
+    command: list[str] = field(default_factory=lambda: ["codex", "exec", "{instruction}"])
+    timeout_s: float = 1800.0
 
 
 @dataclass
@@ -104,6 +135,7 @@ class VocalisConfig:
     asr: ASRConfig = field(default_factory=ASRConfig)
     brain: BrainConfig = field(default_factory=BrainConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
+    cli_agents: list[CliAgentConfig] = field(default_factory=list)
     log_level: str = "INFO"
 
     # ------------------------------------------------------------------
@@ -127,6 +159,14 @@ class VocalisConfig:
             if not hasattr(cfg, section):
                 continue
             current = getattr(cfg, section)
+            if section == "cli_agents" and isinstance(values, list):
+                fields_cli = CliAgentConfig.__dataclass_fields__
+                cfg.cli_agents = [
+                    CliAgentConfig(**{k: v for k, v in entry.items() if k in fields_cli})
+                    for entry in values
+                    if isinstance(entry, dict)
+                ]
+                continue
             if hasattr(current, "__dataclass_fields__") and isinstance(values, dict):
                 for k, v in values.items():
                     if hasattr(current, k):

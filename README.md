@@ -17,7 +17,7 @@ is doing — in real time.
 [![Discussions](https://img.shields.io/github/discussions/KK-raley/D-voice?color=34d399&logo=github)](https://github.com/KK-raley/D-voice/discussions)
 [![Maintenance](https://img.shields.io/maintenance/yes/2027?color=34d399)](https://github.com/KK-raley/D-voice/graphs/commit-activity)
 
-[Quick start](#-quick-start) · [Architecture](#-architecture) · [How it works](#-how-it-works) · [Showcase](SHOWCASE.md) · [Roadmap](ROADMAP.md) · [Maintenance](MAINTENANCE.md) · [Contributing](CONTRIBUTING.md)
+[Quick start](#-quick-start) · [Architecture](#-architecture) · [How it works](#-how-it-works) · [Local brains & CLI agents](docs/local-brains.md) · [Showcase](SHOWCASE.md) · [Roadmap](ROADMAP.md) · [Maintenance](MAINTENANCE.md) · [Contributing](CONTRIBUTING.md)
 
 > 🌟 **Star this repo** to follow the ride — wake-word listening, voice cloning and
 > multi-agent swarm control are landing next (see the [roadmap](ROADMAP.md)).
@@ -37,10 +37,10 @@ layer** for the agentic era.
 
 | | Capability | How |
 |---|---|---|
-| 🔐 | **Speaker authentication (VoiceGate)** | Resemblyzer d-vector embeddings + cosine threshold. Enrolled impostors get rejected *before* any LLM sees their words. Voiceprints never leave your machine. |
+| 🔐 | **Speaker authentication (VoiceGate)** | ERes2Net-large embeddings (3D-Speaker SOTA, optional `voiceprint` extra; Resemblyzer fallback) + cosine threshold. Enrolled impostors get rejected *before* any LLM sees their words. Voiceprints never leave your machine. |
 | 🗣️ | **Unified speech output** | Every connected agent's text output is spoken through one TTS layer (Edge-TTS neural voices, keyless & free). |
 | 🎛️ | **Voice your way** | Tunable `VoiceProfile`s — voice, rate, pitch, volume — adjustable live from the HUD's Voice Studio or CLI. Evening mode? Slower, warmer, quieter. |
-| 📡 | **Real-time status narration** | A local small model (Ollama) turns raw agent events into calm D-VOICE-style spoken reports: *"claude-code is at 60% — refactoring the parser."* |
+| 📡 | **Real-time status narration** | A local small model (Ollama / llama.cpp / LM Studio — any OpenAI-compatible server) turns raw agent events into calm D-VOICE-style spoken reports: *"claude-code is at 60% — refactoring the parser."* |
 | 🧠 | **Ask-anything console** | Interrupt anytime with questions; the local brain answers with live system context, fully offline. |
 | 🤖 | **Command your agents** | Natural-language dispatch with fan-out: *"让 echo 跑个演示，然后 claude-code 重构测试"* → parallel dispatch + progress bars. |
 | 🔔 | **Done = you know** | Completion, failure and stall detection trigger a spoken chime + desktop toast. |
@@ -75,7 +75,8 @@ D-VOICE(TTS): ♪ 任务完成。claude-code 已修复全部 14 个测试，耗�
 pip install "vocalis-voice-agent[all]"
 
 # 2 · optional but recommended: give D-VOICE a local brain
-ollama pull qwen2.5:3b-instruct
+ollama pull qwen2.5:1.5b-instruct    # or see docs/local-brains.md for
+                                     # llama.cpp / LM Studio / Gemma on CPU
 
 # 3 · enroll YOUR voice (3 short takes)
 vocalis enroll --user you
@@ -162,11 +163,17 @@ Everything lives in `~/.vocalis/config.toml` (auto-created):
 
 ```toml
 [voice_gate]
-threshold = 0.80          # stricter = raise me
+backend = "eres2net-large"  # SOTA (pip install ...[voiceprint]); or "resemblyzer"
+# threshold = 0.55          # override the per-backend default if needed
 
 [brain]
-model = "qwen2.5:3b-instruct"
+backend = "ollama"          # or "openai-compatible" (llama.cpp/LM Studio/vLLM)
+model = "qwen2.5:1.5b-instruct"
 fallback_to_rules = true  # never go mute
+
+[[cli_agents]]             # bridge any terminal agent by voice
+name = "codex"
+command = ["codex", "exec", "{instruction}"]
 
 [tts]
 default_profile = "aria"

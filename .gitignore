@@ -120,6 +120,9 @@ logs_*.zip
 *.log
 .traces/
 
+# Local work logs (keep private, not for the public repo)
+工作日志/
+
 # Framework state
 .streamlit/secrets.toml
 celerybeat-schedule
