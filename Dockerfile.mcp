@@ -32,10 +32,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install the package with ONLY the MCP extra (minimal deps)
 COPY pyproject.toml README.md ./
 COPY vocalis ./vocalis
-# tflite-runtime is not needed for MCP mode; install what we can
-RUN pip install --no-cache-dir -e ".[mcp]" 2>/dev/null \
-    || pip install --no-cache-dir -e ".[mcp]" --no-deps mcp edge-tts numpy 2>/dev/null \
-    || true
+# tflite-runtime is not needed for MCP mode; install the MCP SDK and core deps
+# If the full [mcp] extra fails (e.g. on ARM), fall back to explicit packages
+RUN pip install --no-cache-dir -e ".[mcp]" \
+    || pip install --no-cache-dir -e ".[mcp]" --no-deps mcp edge-tts numpy httpx typer rich pydantic fastapi uvicorn websockets tomli-w
 
 # Runtime data directory
 ENV VOCALIS_HOME=/data
