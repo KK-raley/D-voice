@@ -3,8 +3,10 @@
 Usage:
     vocalis enroll --user alice        # register your voice (3+ utterances)
     vocalis gate --file cmd.wav        # verify a speaker before dispatch
+    vocalis calibrate --self-dir me/ --impostor-dir others/  # FAR/FRR threshold tuning (G7)
     vocalis speak "hello" --profile aria
     vocalis listen                     # wait for "hey D-VOICE" (Ctrl+C to stop)
+    vocalis talk                       # full-duplex voice chat (VAD/turns/barge-in)
     vocalis run "refactor the tests" --agent claude-code
     vocalis ask "what's the status?"
     vocalis agents                     # list connectors
@@ -16,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import wave
 from dataclasses import replace
 from pathlib import Path
 
@@ -31,8 +34,10 @@ from vocalis.config import VocalisConfig, WakeWordConfig
 from vocalis.dvoice.assistant import DVoiceBrain
 from vocalis.dvoice.commander import Commander
 from vocalis.server.events import EventType, bus
-from vocalis.voice.audio import load_wav, record
+from vocalis.voice.audio import load_wav, record, resample
+from vocalis.voice.calibrate import evaluate_thresholds
 from vocalis.voice.gate import VoiceGate
+from vocalis.voice.speaker import SpeakerEncoderError
 from vocalis.voice.wakeword import WakeHit, WakeWordDetector
 
 app = typer.Typer(
@@ -122,6 +127,106 @@ def gate(
             title="VoiceGate",
         )
     )
+
+
+# ----------------------------------------------------------------------
+# Voiceprint threshold calibration (G7 FAR/FRR harness)
+# ----------------------------------------------------------------------
+def _parse_thresholds(raw: str | None) -> list[float]:
+    """解析 --thresholds 逗号列表；缺省用 0.30-0.90 步长 0.05。"""
+    if raw is None:
+        return [round(0.30 + 0.05 * i, 2) for i in range(13)]
+    try:
+        values = [float(x) for x in raw.split(",") if x.strip()]
+    except ValueError:
+        console.print(
+            f"[red]无效的 --thresholds：{escape(raw)}[/]"
+            "（应为逗号分隔的小数，如 0.4,0.5,0.6）"
+        )
+        raise typer.Exit(1)
+    if not values:
+        console.print("[red]--thresholds 不能为空（如 0.4,0.5,0.6）[/]")
+        raise typer.Exit(1)
+    return values
+
+
+def _load_wav_dir(directory: Path, flag: str) -> list:
+    """读取目录下全部 WAV（统一重采样到 16k 单声道）。
+
+    目录缺失、没有 WAV 文件或文件无法解析时给出友好错误并退出，
+    而不是抛出裸异常。
+    """
+    if not directory.is_dir():
+        console.print(f"[red]目录不存在（{flag}）：{directory}[/]")
+        raise typer.Exit(1)
+    files = sorted(directory.glob("*.wav"))
+    if not files:
+        console.print(
+            f"[red]{flag} 目录中没有 WAV 文件：{directory}（需要 16 位 PCM）[/]"
+        )
+        raise typer.Exit(1)
+    audios = []
+    for path in files:
+        try:
+            audio, sample_rate = load_wav(path)
+        except (ValueError, wave.Error) as e:
+            console.print(f"[red]无法读取 {path.name}：{escape(str(e))}[/]")
+            raise typer.Exit(1) from e
+        audios.append(resample(audio, sample_rate))
+    return audios
+
+
+@app.command()
+def calibrate(
+    self_dir: Path = typer.Option(
+        ..., "--self-dir", help="本人（已注册用户）的 WAV 音频目录"
+    ),
+    impostor_dir: Path = typer.Option(
+        ..., "--impostor-dir", help="冒充者（其他说话人）的 WAV 音频目录"
+    ),
+    thresholds: str = typer.Option(
+        None,
+        "--thresholds",
+        "-t",
+        help="逗号分隔的候选阈值（默认 0.30-0.90，步长 0.05）",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="输出 JSON 报告"),
+) -> None:
+    """校准声纹阈值：逐阈值评估 FAR/FRR 并推荐最优值（G7）。"""
+    candidates = _parse_thresholds(thresholds)
+    self_audios = _load_wav_dir(self_dir, "--self-dir")
+    impostor_audios = _load_wav_dir(impostor_dir, "--impostor-dir")
+
+    try:
+        gate = VoiceGate()
+        report = evaluate_thresholds(gate, self_audios, impostor_audios, candidates)
+    except SpeakerEncoderError as e:
+        console.print(f"[red]声纹后端不可用：[/]{escape(str(e))}")
+        raise typer.Exit(1) from e
+    except (RuntimeError, ValueError) as e:  # 未注册声纹 / 音频太短等
+        console.print(f"[red]校准失败：[/]{escape(str(e))}")
+        raise typer.Exit(1) from e
+
+    if json_out:
+        console.print_json(json.dumps(report.to_dict(), ensure_ascii=False))
+        return
+
+    table = Table(title="声纹阈值校准（G7）")
+    table.add_column("threshold", style="cyan", justify="right")
+    table.add_column("FAR 误接受率", justify="right")
+    table.add_column("FRR 误拒绝率", justify="right")
+    table.add_column("|FAR-FRR|", justify="right")
+    table.add_column("")
+    for row in report.results:
+        table.add_row(
+            f"{row.threshold:g}",
+            f"{row.far * 100:.1f}%",
+            f"{row.frr * 100:.1f}%",
+            f"{row.eer_distance * 100:.1f}%",
+            "[green]推荐[/]" if row is report.recommended else "",
+        )
+    console.print(table)
+    console.print(Panel(report.summary(), title="校准报告"))
 
 
 # ----------------------------------------------------------------------
@@ -282,6 +387,115 @@ def listen(
     except Exception as e:  # mic missing / PortAudio failure: friendly exit
         console.print(f"[red]Microphone error:[/] {escape(str(e))}")
         raise typer.Exit(1) from e
+
+
+# ----------------------------------------------------------------------
+# Realtime full-duplex conversation
+# ----------------------------------------------------------------------
+@app.command()
+def talk(
+    profile: str = typer.Option(None, "--profile", "-p", help="Voice profile for replies"),
+    min_pause: float = typer.Option(
+        0.8, "--min-pause", min=0.2, max=3.0, help="Silence (s) before D-VOICE answers"
+    ),
+    max_turn: float = typer.Option(
+        30.0, "--max-turn", min=2.0, help="Force-cut a turn longer than this (s)"
+    ),
+    adaptive: bool = typer.Option(
+        False, "--adaptive", help="Adaptive noise-floor VAD threshold (noisy rooms)"
+    ),
+) -> None:
+    """Full-duplex voice chat: VAD chunking + turn detection + barge-in."""
+    _needs_voice_stack("sounddevice", "faster_whisper")
+    from collections import deque as _deque
+
+    from vocalis.voice.asr import Transcriber
+    from vocalis.voice.audio import mic_frames
+    from vocalis.voice.realtime import EnergyVAD, RealtimeSession, TurnDetector
+    from vocalis.voice.tts import InterruptiblePlayer, TTSService
+
+    config = VocalisConfig.load()
+    # Headless AppState (examples/04_full_dvoice.py without monitor/notifier).
+    registry = build_default_registry()
+    brain = DVoiceBrain(registry=registry)
+    commander = Commander(registry, brain)
+    transcriber = Transcriber(config.asr)
+    tts = TTSService(config)
+    player = InterruptiblePlayer()
+    session = RealtimeSession(
+        vad=EnergyVAD(adaptive=adaptive),
+        turn=TurnDetector(min_pause_s=min_pause, max_turn_s=max_turn),
+    )
+    pending: _deque = _deque()
+    mic = mic_frames()
+    min_samples = int(0.3 * 16000)
+
+    console.print(
+        Panel(
+            f"min pause: [cyan]{min_pause}s[/] | max turn: [cyan]{max_turn}s[/] | "
+            f"adaptive VAD: {adaptive}\n"
+            "Speak naturally - short thinking pauses will not cut you off.\n"
+            "Talk over D-VOICE to interrupt its reply. Ctrl+C to quit.",
+            title="D-VOICE talk",
+        )
+    )
+
+    def _drain(events) -> None:
+        for ev in events:
+            if ev.kind == "barge_in":
+                player.stop()
+                console.print("[yellow](已打断)[/]")
+            elif ev.kind in ("utterance_end", "turn_complete"):
+                if ev.audio is None or ev.audio.size < min_samples:
+                    continue
+                if ev.kind == "turn_complete":
+                    console.print("[dim](turn force-cut)[/]")
+                pending.append(ev.audio)
+                if player.playing:  # a finished new utterance wins the floor
+                    player.stop()
+
+    def _respond(audio) -> None:
+        try:
+            text = transcriber.transcribe(audio, sample_rate=16000).text.strip()
+        except RuntimeError as e:
+            console.print(f"[red]ASR failed:[/] {escape(str(e))}")
+            return
+        if not text:
+            return
+        console.print(f"[cyan]you:[/] {escape(text)}")
+        try:
+            reply = str(asyncio.run(commander.execute(text)).get("reply", "")).strip()
+        except Exception as e:  # brain/agent failure must not kill the session
+            reply = f"(command failed: {e})"
+        console.print(Panel(reply[:800] or "(no reply)", title="D-VOICE"))
+        result = asyncio.run(tts.synthesize(reply, profile))
+        if not (result.ok and result.audio_path):
+            console.print("[yellow](TTS unavailable - text only; "
+                          "pip install edge-tts for voice replies)[/]")
+            return
+        # Full-duplex: keep feeding mic frames while the reply plays so a
+        # barge-in (or a completed new utterance) stops playback instantly.
+        session.bot_speaking = True
+        player.play(result.audio_path)
+        try:
+            while player.playing:
+                try:
+                    frame = next(mic)
+                except StopIteration:
+                    break
+                _drain(session.feed_frame(frame))
+        finally:
+            session.bot_speaking = False
+
+    try:
+        for frame in mic:
+            _drain(session.feed_frame(frame))
+            while pending:
+                _respond(pending.popleft())
+    except KeyboardInterrupt:
+        console.print("\n[dim]Talk session ended.[/]")
+    finally:
+        player.stop()
 
 
 # ----------------------------------------------------------------------

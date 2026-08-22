@@ -37,6 +37,7 @@ class AgentRegistry:
                 "description": c.description,
                 "capabilities": list(c.capabilities),
                 "status": c.status.value,
+                "health": c.health_dict(),
             }
             for c in self.connectors.values()
         ]
@@ -57,10 +58,18 @@ class AgentRegistry:
         # carry the same id (the HUD relies on this for task timelines).
         record = TaskRecord(agent=agent, instruction=instruction)
         await self.bus.publish(EventType.TASK_QUEUED, **record.to_dict())
-        record = await connector.run(instruction, record=record, **kw)
+        try:
+            record = await connector.run(instruction, record=record, **kw)
+        except asyncio.CancelledError:
+            # 取消的任务同样进 history（与 completed/failed 对称，HUD recent 可见）。
+            self._append_history(record)
+            raise
+        self._append_history(record)
+        return record
+
+    def _append_history(self, record: TaskRecord) -> None:
         self.history.append(record)
         self.history = self.history[-100:]
-        return record
 
     async def dispatch_many(
         self, assignments: list[tuple[str, str]]
@@ -125,4 +134,10 @@ def build_default_registry(
             logger.info("registered CLI agent %r -> %s", entry.name, entry.command)
     except Exception:
         logger.warning("failed to load cli_agents from config", exc_info=True)
+
+    # Third-party connectors discovered via importlib entry points
+    # (group "vocalis.agents"); see docs/hooks.md for the plugin contract.
+    from vocalis.agents.plugins import load_entry_point_connectors
+
+    load_entry_point_connectors(registry, event_bus)
     return registry

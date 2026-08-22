@@ -16,7 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY pyproject.toml README.md ./
 COPY vocalis ./vocalis
-RUN pip install --no-cache-dir -e ".[all]"
+# Install the full package; wake-word extra (openwakeword) may fail on some
+# architectures - the code degrades gracefully, so we fall back to [voice,mcp].
+RUN pip install --no-cache-dir -e ".[all]" \
+    || pip install --no-cache-dir -e ".[voice,mcp]"
 
 COPY --from=hud /app/dist ./hud
 

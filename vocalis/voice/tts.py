@@ -13,11 +13,22 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
+import threading
+import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from vocalis.config import VocalisConfig, audio_cache_dir
 from vocalis.server.events import EventBus, EventType, bus
+
+logger = logging.getLogger("vocalis.tts")
+
+#: 合成前文本变换钩子：依次应用，``str -> str``（如 "2m41s" -> "两分四十一秒"）。
+PreTextHook = Callable[[str], str]
+#: 合成后回调钩子：``(text, ok) -> None``，成功与失败路径都会触发（统计/缓存用）。
+PostTextHook = Callable[[str, bool], None]
 
 
 @dataclass
@@ -144,21 +155,66 @@ class EdgeTTSEngine(TTSEngine):
 
 
 class TTSService:
-    """Profile-aware speech synthesis + local playback."""
+    """Profile-aware speech synthesis + local playback.
+
+    文本钩子（Track C4）：``pre_hooks`` 在合成前依次变换文本（``str ->
+    str``，如数字口语化）；``post_hooks`` 在合成结束后以 ``(text, ok)``
+    回调（可用于统计/缓存）。两类钩子均可经构造函数注入，也可在运行时
+    用 :meth:`add_pre_hook` / :meth:`add_post_hook` 追加；单个钩子异常
+    只记录 warning，绝不影响合成本身。详见 docs/hooks.md。
+    """
 
     def __init__(
         self,
         config: VocalisConfig | None = None,
         event_bus: EventBus | None = None,
         engines: dict[str, TTSEngine] | None = None,
+        pre_hooks: list[PreTextHook] | None = None,
+        post_hooks: list[PostTextHook] | None = None,
     ) -> None:
         self.config = config or VocalisConfig.load()
         self.bus = event_bus or bus
         self.engines: dict[str, TTSEngine] = engines or {EdgeTTSEngine.name: EdgeTTSEngine()}
+        self._pre_hooks: list[PreTextHook] = list(pre_hooks or [])
+        self._post_hooks: list[PostTextHook] = list(post_hooks or [])
         self._profiles: dict[str, VoiceProfile] = {
             name: VoiceProfile(name=name, **params)
             for name, params in self.config.tts.profiles.items()
         }
+
+    # -- text hooks ----------------------------------------------------
+    def add_pre_hook(self, hook: PreTextHook) -> None:
+        """追加一个合成前文本变换钩子（签名 ``str -> str``）。"""
+        self._pre_hooks.append(hook)
+
+    def add_post_hook(self, hook: PostTextHook) -> None:
+        """追加一个合成后回调钩子（签名 ``(text, ok) -> None``）。"""
+        self._post_hooks.append(hook)
+
+    def _apply_pre_hooks(self, text: str) -> str:
+        """依次应用 pre 钩子；单个钩子异常记 warning 并保留当前文本。"""
+        for hook in self._pre_hooks:
+            try:
+                text = hook(text)
+            except Exception:
+                logger.warning(
+                    "TTS pre-hook %r failed; text left unchanged",
+                    getattr(hook, "__name__", hook),
+                    exc_info=True,
+                )
+        return text
+
+    def _run_post_hooks(self, text: str, ok: bool) -> None:
+        """触发 post 钩子；单个钩子异常记 warning，不影响其他钩子。"""
+        for hook in self._post_hooks:
+            try:
+                hook(text, ok)
+            except Exception:
+                logger.warning(
+                    "TTS post-hook %r failed",
+                    getattr(hook, "__name__", hook),
+                    exc_info=True,
+                )
 
     # -- profiles ------------------------------------------------------
     def profiles(self) -> dict[str, VoiceProfile]:
@@ -209,22 +265,30 @@ class TTSService:
     async def synthesize(
         self, text: str, profile_name: str | None = None
     ) -> SpeakResult:
-        """Synthesize to bytes + cache file without playing."""
+        """Synthesize to bytes + cache file without playing.
+
+        文本先经 ``pre_hooks`` 依次变换（事件、引擎调用与缓存键用的都是
+        变换后的文本），结束后无论成败都触发 ``post_hooks(text, ok)``。
+        """
+        text = self._apply_pre_hooks(text)
         profile = self.get_profile(profile_name)
         engine_name = self.config.tts.engine
         engine = self.engines.get(engine_name)
         if engine is None:
+            self._run_post_hooks(text, False)
             return SpeakResult(ok=False, error=f"engine '{engine_name}' not registered", profile=profile.name)
 
         await self.bus.publish(EventType.TTS_SPEAKING, profile=profile.name, text=text[:120])
         try:
             audio_bytes = await engine.synthesize(text, profile)
         except Exception as e:
+            self._run_post_hooks(text, False)
             return SpeakResult(ok=False, engine=engine_name, profile=profile.name, error=str(e))
 
         key = hashlib.sha1(f"{text}|{profile.name}|{profile.voice}|{profile.rate}|{profile.pitch}|{profile.volume}".encode()).hexdigest()[:16]
         path = audio_cache_dir() / f"{key}.mp3"
         path.write_bytes(audio_bytes)
+        self._run_post_hooks(text, True)
         return SpeakResult(
             ok=True,
             audio_path=path,
@@ -268,3 +332,103 @@ class TTSService:
             if shutil.which(name):
                 subprocess.run(cmd, check=False)
                 return
+
+
+# ----------------------------------------------------------------------
+# Interruptible playback (barge-in support)
+# ----------------------------------------------------------------------
+def _blocking_play(path: Path, stop: threading.Event) -> None:
+    """Playback kernel for :class:`InterruptiblePlayer` (runs in a thread).
+
+    Windows: winsound plays synchronously in this worker thread; the owner
+    interrupts by calling ``PlaySound(None, SND_PURGE)`` from another thread,
+    which cancels the in-flight playback. Unix: spawn mpv/ffplay/afplay via
+    Popen and poll ``stop`` so ``terminate()`` lands within ~20 ms.
+    """
+    try:
+        import winsound
+    except ImportError:
+        winsound = None
+
+    if winsound is not None:
+        winsound.PlaySound(str(path), winsound.SND_FILENAME)
+        return
+
+    import shutil
+    import subprocess
+
+    players: list[tuple[str, list[str]]] = [
+        ("afplay", ["afplay", str(path)]),
+        ("mpv", ["mpv", "--no-video", "--really-quiet", str(path)]),
+        ("ffplay", ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)]),
+    ]
+    for name, cmd in players:
+        if shutil.which(name):
+            proc = subprocess.Popen(cmd)
+            try:
+                while proc.poll() is None:
+                    if stop.is_set():
+                        proc.terminate()
+                        break
+                    time.sleep(0.02)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+            return
+
+
+class InterruptiblePlayer:
+    """Threaded audio playback that can be stopped mid-utterance.
+
+    Needed for barge-in: while D-VOICE speaks, the mic loop keeps running;
+    once the user is confirmed to be talking over the assistant (see
+    ``vocalis.voice.realtime.BargeInController``), ``stop()`` cancels the
+    reply within milliseconds. Mirrors the hard-cancel behavior of
+    HuggingFace speech-to-speech and TEN Framework voice agents.
+
+    ``TTSService.play_file`` is intentionally untouched - this class is the
+    streaming counterpart, not a replacement.
+    """
+
+    def __init__(self) -> None:
+        self._thread: threading.Thread | None = None
+        self._stop = threading.Event()
+
+    def play(self, path: str | Path) -> None:
+        """Start playing ``path`` in a background thread (non-blocking)."""
+        self.stop()
+        self.wait(timeout=2.0)  # let a previous kernel unwind first
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._worker, args=(Path(path),), daemon=True
+        )
+        self._thread.start()
+
+    def _worker(self, path: Path) -> None:
+        try:
+            _blocking_play(path, self._stop)
+        except Exception:  # playback must never crash the conversation loop
+            pass
+
+    def stop(self) -> None:
+        """Cancel playback immediately (safe when nothing is playing)."""
+        self._stop.set()
+        try:
+            import winsound
+
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        except Exception:
+            pass  # non-Windows or winsound unavailable: Popen path handles it
+
+    def wait(self, timeout: float | None = None) -> bool:
+        """Wait for the worker thread; True if it finished (or never ran)."""
+        thread = self._thread
+        if thread is None:
+            return True
+        thread.join(timeout)
+        return not thread.is_alive()
+
+    @property
+    def playing(self) -> bool:
+        thread = self._thread
+        return thread is not None and thread.is_alive() and not self._stop.is_set()

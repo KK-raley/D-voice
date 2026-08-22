@@ -17,10 +17,7 @@ is doing — in real time.
 [![Discussions](https://img.shields.io/github/discussions/KK-raley/D-voice?color=34d399&logo=github)](https://github.com/KK-raley/D-voice/discussions)
 [![Maintenance](https://img.shields.io/maintenance/yes/2027?color=34d399)](https://github.com/KK-raley/D-voice/graphs/commit-activity)
 
-[Quick start](#-quick-start) · [Architecture](#-architecture) · [How it works](#-how-it-works) · [Local brains & CLI agents](docs/local-brains.md) · [Showcase](SHOWCASE.md) · [Roadmap](ROADMAP.md) · [Maintenance](MAINTENANCE.md) · [Contributing](CONTRIBUTING.md)
-
-> 🌟 **Star this repo** to follow the ride — wake-word listening, voice cloning and
-> multi-agent swarm control are landing next (see the [roadmap](ROADMAP.md)).
+[Quick start](#quick-start) · [Architecture](#architecture) · [MCP for agents](#mcp-server-for-coding-agents) · [How it works](#how-it-works) · [Local brains & CLI agents](docs/local-brains.md) · [Showcase](SHOWCASE.md) · [Roadmap](ROADMAP.md) · [Maintenance](MAINTENANCE.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -38,19 +35,23 @@ layer** for the agentic era.
 | | Capability | How |
 |---|---|---|
 | 🔐 | **Speaker authentication (VoiceGate)** | ERes2Net-large embeddings (3D-Speaker SOTA, optional `voiceprint` extra; Resemblyzer fallback) + cosine threshold. Enrolled impostors get rejected *before* any LLM sees their words. Voiceprints never leave your machine. |
-| 🗣️ | **Unified speech output** | Every connected agent's text output is spoken through one TTS layer (Edge-TTS neural voices, keyless & free). |
-| 🎛️ | **Voice your way** | Tunable `VoiceProfile`s — voice, rate, pitch, volume — adjustable live from the HUD's Voice Studio or CLI. Evening mode? Slower, warmer, quieter. |
-| 📡 | **Real-time status narration** | A local small model (Ollama / llama.cpp / LM Studio — any OpenAI-compatible server) turns raw agent events into calm D-VOICE-style spoken reports: *"claude-code is at 60% — refactoring the parser."* |
+| 🗣️ | **Unified speech output** | Every connected agent's text is spoken through one TTS layer (Edge-TTS neural voices, keyless & free). |
+| 🎛️ | **Voice your way** | Tunable `VoiceProfile`s — voice, rate, pitch, volume — adjustable live from the HUD's Voice Studio. Evening mode? Slower, warmer, quieter. |
+| 📡 | **Real-time status narration** | A local small model (Ollama / llama.cpp / LM Studio — any OpenAI-compatible server) turns raw agent events into calm spoken reports. |
+| 🔗 | **MCP server for agents** | Agents connect *to* D-VOICE over the Model Context Protocol (stdio) and call `speak` / `report_progress` / `get_status` / `dispatch_task`. Agents speak up proactively instead of the user polling a dashboard. |
+| 🧩 | **Pluggable ecosystem** | Third-party agents register via Python entry-points (`vocalis.agents` group) — no forking needed. Documented event hook contract ([docs/hooks.md](docs/hooks.md)). |
 | 🧠 | **Ask-anything console** | Interrupt anytime with questions; the local brain answers with live system context, fully offline. |
 | 🤖 | **Command your agents** | Natural-language dispatch with fan-out: *"让 echo 跑个演示，然后 claude-code 重构测试"* → parallel dispatch + progress bars. |
+| 🛡️ | **Agent resilience** | Opt-in retry + circuit breaker. Task cancellation propagates to subprocesses. Connector health tracked (latency, error rate, failures). |
 | 🔔 | **Done = you know** | Completion, failure and stall detection trigger a spoken chime + desktop toast. |
+| 📊 | **Voiceprint calibration** | `vocalis calibrate` — sweep gate thresholds, FAR/FRR/EER per candidate, weighted recommendation. |
 
 And when no local model is available, a rule-based fallback keeps the whole
 loop alive. **The ecosystem never goes mute.**
 
 ---
 
-## ✨ Demo moments
+## Demo moments
 
 ```
 You (mic)   : "D-VOICE，现在什么情况？"
@@ -60,7 +61,7 @@ D-VOICE(TTS): "两个任务正在执行。claude-code 正在重构解析器，�
 You (mic)   : "让 claude-code 把测试也修一下"
 D-VOICE(TTS): "已派发。预计 3 分钟。完成后我会提醒您。"
 ...
-D-VOICE(TTS): ♪ 任务完成。claude-code 已修复全部 14 个测试，耗时 2 分 41 秒。
+D-VOICE(TTS): 任务完成。claude-code 已修复全部 14 个测试，耗时 2 分 41 秒。
 ```
 
 > Full walkthrough scripts live in [`examples/`](examples) — from enrollment
@@ -68,7 +69,7 @@ D-VOICE(TTS): ♪ 任务完成。claude-code 已修复全部 14 个测试，耗�
 
 ---
 
-## 🚀 Quick start
+## Quick start
 
 ```bash
 # 1 · install (voice extras included)
@@ -118,19 +119,19 @@ so you can watch the HUD, narration and notifications work end-to-end.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
- Mic ──► VoiceGate ──(reject impostors)──► ASR ──► Commander ──► Agents
-              │                                    │       ▲
-              │                              questions│      │ progress
-              │                                    ▼      │
-              │                              DVoiceBrain  TaskMonitor
-              │                              (local LLM)  (milestones+watchdog)
-              └────────────► EventBus ◄──────────┴──────────┘
-                              │
-        ┌─────────────────────┼──────────────────┐
-        ▼                     ▼                  ▼
+ Mic --> VoiceGate --(reject impostors)--> ASR --> Commander --> Agents
+              |                                    |       ^
+              |                              questions|      | progress
+              |                                    v      |
+              |                              DVoiceBrain  TaskMonitor
+              |                              (local LLM)  (milestones+watchdog)
+              +------------> EventBus <----------+----------+
+                              |
+        +---------------------+------------------+
+        v                     v                  v
    TTS narration       HUD (React/WS)      Notifications
    (VoiceProfile)      live ops feed       chime + toast
 ```
@@ -140,24 +141,79 @@ typed events (`voice.rejected`, `task.progress`, `monitor.alert`, ...), and the
 HUD, monitor, narrator and notifier are all just subscribers. Deep dive:
 [`docs/architecture.md`](docs/architecture.md).
 
-## 📦 Project layout
+---
+
+## MCP server for coding agents
+
+D-VOICE doubles as a **Model Context Protocol (MCP) server**, so your coding
+agents (Claude Code, Codex, opencode, aider, Cursor, ...) can connect and
+narrate their work aloud.
+
+### How it works
+
+Instead of you polling a dashboard, the agent calls D-VOICE directly:
+
+```
+Agent (Claude Code)  --stdio-->  D-VOICE MCP server  --TTS-->  You hear it
+```
+
+Four tools are exposed:
+
+| Tool | What it does | When to call |
+|---|---|---|
+| `speak` | Say text aloud right now | Milestone reached, result ready, user attention needed |
+| `report_progress` | Report a progress update | Task at 30%, 60%, 90% — narrated as step description |
+| `get_status` | Snapshot of agents, tasks, voices | Session start, or after dispatching |
+| `dispatch_task` | Fire-and-forget task assignment | Delegate work to another agent |
+
+### Run it
+
+```bash
+# Install with MCP support
+pip install 'vocalis-voice-agent[mcp]'
+
+# Start the MCP server (stdio transport)
+python -m vocalis.server.mcp
+```
+
+### Glama / MCP client deployment
+
+```bash
+docker build -t vocalis-mcp -f Dockerfile.mcp .
+docker run -i --rm vocalis-mcp
+```
+
+The MCP server is headless (no web UI, no audio playback needed) — it
+synthesizes speech and returns the path to the audio file. Configuration
+is via environment variables (`OPENAI_API_KEY`, `VOCALIS_HOME`, etc.).
+
+> **Design decision**: No authorization tools are exposed via MCP. Spoken
+> consent is too casual for destructive operations. Approvals stay in the
+> agent's native UI (terminal/IDE confirmation). D-VOICE narrates the
+> request but never grants it.
+
+---
+
+## Project layout
 
 ```
 vocalis/
-├── vocalis/               # Python package
-│   ├── voice/             #   VoiceGate · ASR · TTS · audio IO
-│   ├── agents/            #   connector base + echo / claude-code / openai
-│   ├── dvoice/            #   brain · task monitor · commander
-│   ├── notify/            #   spoken + toast notifications
-│   ├── server/            #   FastAPI · WebSocket event stream
-│   └── cli.py             #   `vocalis` command
-├── ui/                    # React HUD (Vite · TS · zero UI deps)
-├── examples/              # 01-enroll → 04-full-dvoice
-├── tests/                 # offline pytest suite (3·OS × 3·py matrix in CI)
-└── docs/                  # architecture · getting-started
++-- vocalis/               # Python package
+|   +-- voice/             #   VoiceGate . ASR . TTS . audio IO
+|   +-- agents/            #   connector base + echo / claude-code / openai
+|   +-- dvoice/            #   brain . task monitor . commander
+|   +-- notify/            #   spoken + toast notifications
+|   +-- server/            #   FastAPI . MCP . WebSocket event stream
+|   +-- cli.py             #   `vocalis` command
++-- ui/                    # React HUD (Vite . TS . zero UI deps)
++-- examples/              # 01-enroll to 04-full-dvoice
++-- tests/                 # offline pytest suite (3 OS x 3 py matrix in CI)
++-- docs/                  # architecture . getting-started . hooks . mcp
 ```
 
-## ⚙️ Configuration
+---
+
+## Configuration
 
 Everything lives in `~/.vocalis/config.toml` (auto-created):
 
@@ -184,18 +240,22 @@ watchdog_timeout_s = 300  # stall alerts
 
 Secrets (`OPENAI_API_KEY`, ...) are always environment variables — never stored.
 
-## 🗺️ Roadmap
+---
+
+## Roadmap
 
 | Version | Theme | Highlights |
 | ------- | ----- | ---------- |
-| **v0.2** 🚧 | Always Listening | wake-word, streaming ASR, multi-user households, liveness checks |
-| **v0.3** | Any Voice | XTTS-v2 voice cloning, emotion control, auto-summarize before speech |
-| **v0.4** | Swarm Control | parallel fan-out board, proactive interruptions, MCP connectors |
-| **v1.0** | Production | Tauri desktop shell, encrypted voiceprint vault, FAR/FRR tuning |
+| **v0.2** | Always Listening | wake-word, streaming ASR, realtime dialogue, MCP server, hook contract, agent resilience, voiceprint calibration |
+| **v0.3** | Any Voice | XTTS-v2 voice cloning, emotion control, deep protocol adapters, Piper offline TTS |
+| **v0.4** | Swarm Control | parallel fan-out board, proactive interruptions, tri-stream full-duplex model |
+| **v1.0** | Production | Tauri desktop shell, encrypted voiceprint vault, multi-user households |
 
-Full detail in [ROADMAP.md](ROADMAP.md) · history in [CHANGELOG.md](CHANGELOG.md).
+Full detail in [ROADMAP.md](ROADMAP.md) . history in [CHANGELOG.md](CHANGELOG.md).
 
-## 🤝 Contributing
+---
+
+## Contributing
 
 PRs are welcome — connector integrations, TTS backends, docs and bug fixes
 especially. Read [CONTRIBUTING.md](CONTRIBUTING.md), then:
@@ -208,15 +268,19 @@ pytest -q && ruff check vocalis tests examples
 **House rules:** voiceprints and recordings are never committed; tests must
 pass offline; keep new dependencies justified.
 
-## 🛡️ Security & privacy
+---
 
-- Voiceprints = biometric data → stored **only** under `~/.vocalis/`, git-ignored.
+## Security & privacy
+
+- Voiceprints = biometric data -> stored **only** under `~/.vocalis/`, git-ignored.
 - No telemetry. No cloud. Brain runs on your machine via Ollama.
 - Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
 
-## 📄 License
+---
 
-[MIT](LICENSE) © Vocalis Contributors
+## License
+
+[MIT](LICENSE) (c) Vocalis Contributors
 
 ---
 
@@ -224,6 +288,6 @@ pass offline; keep new dependencies justified.
 
 **"Sometimes you gotta run before you can walk."** — build your D-VOICE today.
 
-Made with 🎙️ + 🧠 · [Discussions](https://github.com/KK-raley/D-voice/discussions) · [Issues](https://github.com/KK-raley/D-voice/issues)
+Made with microphone + brain . [Discussions](https://github.com/KK-raley/D-voice/discussions) . [Issues](https://github.com/KK-raley/D-voice/issues)
 
 </div>

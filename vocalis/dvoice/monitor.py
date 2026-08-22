@@ -109,7 +109,14 @@ class TaskMonitor:
             task = self.tracked.pop(task_id, None)
             if not task:
                 return
-            task.status = "completed" if event.type == EventType.TASK_COMPLETED else "failed"
+            if event.type == EventType.TASK_COMPLETED:
+                task.status = "completed"
+            elif data.get("status") == "cancelled":
+                # 用户/系统主动取消：不是失败，静默收尾（不触发"任务失败"播报）。
+                task.status = "cancelled"
+                return
+            else:
+                task.status = "failed"
             if self.on_completion:
                 try:
                     await self.on_completion(task)

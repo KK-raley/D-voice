@@ -67,11 +67,17 @@ local-brain = [
 ]
 wakeword = [
     # Always-on wake-word detection ("hey D-VOICE") via openwakeword
+    # tflite-runtime is pulled in by openwakeword itself; we do not list it
+    # explicitly because it is not available on every Linux arch (e.g. ARM).
+    # The code degrades gracefully when tflite-runtime is missing.
     "openwakeword>=0.5",
-    "tflite-runtime>=2.10; platform_system != 'Windows'",
+]
+mcp = [
+    # MCP (Model Context Protocol) server for coding-agent integration
+    "mcp>=1.0",
 ]
 all = [
-    "vocalis-voice-agent[voice,local-brain,wakeword]",
+    "vocalis-voice-agent[voice,local-brain,wakeword,mcp]",
 ]
 dev = [
     "pytest>=8.0",

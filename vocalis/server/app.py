@@ -14,6 +14,7 @@ Endpoints:
   POST /api/speak           - synthesize text; returns audio/mpeg for browser playback
   GET  /api/events/history  - recent event-bus history
   WS   /ws                  - live event stream for the HUD
+                              (replays bus history on connect, ?replay=N caps it)
 
 Security: CORS is restricted to the dev HUD origin; when the VOCALIS_TOKEN
 environment variable is set, every mutating request must carry it in the
@@ -42,7 +43,7 @@ from vocalis.dvoice.assistant import DVoiceBrain
 from vocalis.dvoice.commander import Commander
 from vocalis.dvoice.monitor import TaskMonitor
 from vocalis.notify.notifier import Notifier
-from vocalis.server.events import Event, EventType, bus
+from vocalis.server.events import Event, EventBus, EventType, bus
 from vocalis.voice.tts import TTSService, VoiceProfile, filter_voices, list_voices
 
 _REQUIRED_TOKEN = os.environ.get("VOCALIS_TOKEN", "")
@@ -232,7 +233,7 @@ async def apply_preset(body: PresetBody) -> dict[str, Any]:
     try:
         profile = state.tts.apply_preset(body.name)
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e).strip("'"))
+        raise HTTPException(status_code=404, detail=str(e).strip("'")) from e
     return {
         "ok": True,
         "profile": profile.to_dict(),
@@ -305,11 +306,41 @@ def _task_reply(result: dict[str, Any]) -> str:
 # ----------------------------------------------------------------------
 # WebSocket: live event stream
 # ----------------------------------------------------------------------
+async def _replay_history(
+    ws: WebSocket, event_bus: EventBus, replay: int | None
+) -> set[str]:
+    """F3：连接建立后按时间顺序（旧 -> 新）回放 ``bus.history``。
+
+    回放消息 = 标准 Event.to_dict() + ``"replayed": true`` 附加字段——
+    HUD 的 onmessage 只依赖 id/type 字段，附加字段天然兼容，无需改 UI。
+    ``replay=None`` 回放全部历史；``replay=N`` 只回放最近 N 条（上限）；
+    ``replay=0`` 关闭回放。
+
+    返回已回放的事件 id 集合，供实时转发循环去重：订阅发生在快照之前，
+    两个时刻之间发布的事件会同时出现在队列与历史里，必须只发一次。
+    """
+    history = list(event_bus.history)  # 快照，防止回放期间追加的实时事件混入
+    if replay is not None:
+        # 注意 [-0:] 等价于 [0:]（整段），所以 0 要单独处理
+        history = history[-replay:] if replay > 0 else []
+    sent: set[str] = set()
+    for event in history:
+        sent.add(event.id)
+        await ws.send_json({**event.to_dict(), "replayed": True})
+    return sent
+
+
 @app.websocket("/ws")
 async def ws_events(
     ws: WebSocket,
     token: str | None = Query(default=None),
+    replay: int | None = Query(default=None, ge=0),
 ) -> None:
+    """HUD 的事件流：连接后先回放历史事件，再转发实时事件。
+
+    回放数量可配置：``?replay=N`` 只回放最近 N 条（上限），``?replay=0``
+    关闭回放，缺省回放全部历史（见 :func:`_replay_history`）。
+    """
     if _REQUIRED_TOKEN and token != _REQUIRED_TOKEN:
         await ws.close(code=4401)
         return
@@ -321,12 +352,15 @@ async def ws_events(
             type="system.ready", data={"version": vocalis.__version__}
         ).to_dict()
         await ws.send_json(hello)
+        replayed_ids = await _replay_history(ws, state.event_bus, replay)
         while True:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=15.0)
             except asyncio.TimeoutError:
                 await ws.send_json(Event(type="system.ping", data={}).to_dict())
                 continue
+            if event.id in replayed_ids:
+                continue  # 已在回放中发送过（订阅与快照之间发布的事件）
             await ws.send_json(event.to_dict())
     except WebSocketDisconnect:
         pass

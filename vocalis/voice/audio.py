@@ -52,6 +52,26 @@ def record(
     return audio
 
 
+def mic_frames(
+    sample_rate: int = 16000,
+    frame_ms: int = 30,
+):
+    """Yield mono float32 frames (~``frame_ms`` each) from the default mic.
+
+    Infinite generator powering the realtime session (``vocalis talk``):
+    30 ms matches the frame size EnergyVAD/Silero-class VADs expect, and
+    streaming frame-by-frame (instead of 1 s blocks like ``_mic_chunks``
+    in the CLI) keeps VAD/turn-detection latency at one frame.
+    """
+    sd = _require_sounddevice()
+    frame_len = int(sample_rate * frame_ms / 1000)
+    with sd.InputStream(samplerate=sample_rate, channels=1, dtype="float32") as stream:
+        while True:
+            frame, _overflowed = stream.read(frame_len)
+            chunk = np.asarray(frame)
+            yield chunk.mean(axis=1) if chunk.ndim > 1 else chunk
+
+
 def record_until_silence(
     sample_rate: int = 16000,
     silence_s: float = 1.2,

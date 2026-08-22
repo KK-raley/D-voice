@@ -123,6 +123,9 @@ logs_*.zip
 # Local work logs (keep private, not for the public repo)
 工作日志/
 
+# Private research notes (tri-stream survey - for local reference only, not published)
+docs/research/
+
 # Framework state
 .streamlit/secrets.toml
 celerybeat-schedule

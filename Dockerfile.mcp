@@ -1,0 +1,45 @@
+# Vocalis MCP server - minimal image for Glama / MCP-capable platforms
+# Runs D-VOICE as a Model Context Protocol server over stdio.
+# The MCP server has no web UI, HUD, or audio playback - it is a headless
+# narration service that agents connect to over stdio.
+#
+# Build:
+#   docker build -t vocalis-mcp -f Dockerfile.mcp .
+#
+# Run (standalone - for testing / agents that support subprocess MCP):
+#   docker run -i --rm vocalis-mcp
+#
+# Run (Glama / MCP client via stdio):
+#   docker run -i --rm vocalis-mcp
+#   The MCP protocol is entirely over stdin/stdout; no ports to expose.
+#
+# Configuration:
+#   Mount a config at /data/config.toml or set env vars:
+#   - VOCALIS_HOME=/data (default, volume mount for profiles + config)
+#   - OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL (for brain backend)
+#   - OLLAMA_HOST (for Ollama brain backend)
+
+FROM python:3.12-slim AS base
+
+WORKDIR /app
+
+# Minimal runtime deps for audio processing (no portaudio/mpv needed -
+# MCP server is headless, synthesis-only, no playback)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the package with ONLY the MCP extra (minimal deps)
+COPY pyproject.toml README.md ./
+COPY vocalis ./vocalis
+# tflite-runtime is not needed for MCP mode; install what we can
+RUN pip install --no-cache-dir -e ".[mcp]" 2>/dev/null \
+    || pip install --no-cache-dir -e ".[mcp]" --no-deps mcp edge-tts numpy 2>/dev/null \
+    || true
+
+# Runtime data directory
+ENV VOCALIS_HOME=/data
+VOLUME /data
+
+# MCP protocol over stdio - no ports, no HTTP, purely stdio-based
+ENTRYPOINT ["python", "-m", "vocalis.server.mcp"]
