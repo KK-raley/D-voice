@@ -87,6 +87,22 @@ class EventBus:
     def on(self, pattern: str, handler: Handler) -> None:
         self._handlers[pattern].append(handler)
 
+    def off(self, pattern: str, handler: Handler) -> None:
+        """Unregister a handler previously added via :meth:`on`.
+
+        Matches by ``pattern`` + handler identity (bound methods compare equal
+        for the same instance + function, so ``bus.off(p, self.cb)`` removes
+        what ``bus.on(p, self.cb)`` registered). No-op if not found. Same
+        simple (lock-free) implementation style as :meth:`on`.
+        """
+        handlers = self._handlers.get(pattern)
+        if handlers is None:
+            return
+        if handler in handlers:
+            handlers.remove(handler)
+        if not handlers:
+            self._handlers.pop(pattern, None)
+
     # -- publish -------------------------------------------------------
     async def publish(self, type_: EventType | str, **data: Any) -> Event:
         event = Event(type=type_, data=data)

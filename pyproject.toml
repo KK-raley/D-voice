@@ -120,3 +120,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# 缺 pytest-asyncio 时 async 测试会被静默跳过且 exit 0——升级为硬错误。
+# 注意：不能写 error::pytest.PytestUnhandledCoroutineWarning——该警告类在
+# pytest 8.4 已移除（未处理协程测试直接 fail），引用它会让 8.4+ 启动即崩；
+# 故按消息文本匹配（8.0~8.3 该警告即此文本；8.4+ 无此警告，规则无副作用）。
+filterwarnings = ["error:async def functions are not natively supported"]
