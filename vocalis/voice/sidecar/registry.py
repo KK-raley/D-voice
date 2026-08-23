@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger("vocalis.voice.sidecar.registry")
@@ -94,7 +94,7 @@ class VoiceRegistry:
             "kind": "cloned",
             "consent": consent,  # 审计留痕：注册时的同意声明原文
             "ref_file": f"{name}.wav",
-            "created_at": datetime.now(UTC).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         (self.refs_dir / entry["ref_file"]).write_bytes(audio)
         self._entries[name] = entry
