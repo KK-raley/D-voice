@@ -26,9 +26,11 @@ Vocalis is under active development. This document tracks what is shipping next.
       EnergyVAD + TurnDetector (short pauses don't cut you off) +
       BargeInController (interrupt D-VOICE mid-sentence) + streaming
       chunking via RealtimeSession; `vocalis talk` full-duplex command
+      (see [docs/realtime.md](docs/realtime.md))
 - [x] ✅ D-VOICE as MCP server (pulled from v0.3, G8) — agents connect
       *to* D-VOICE: `speak` / `report_progress` / `get_status` /
       `dispatch_task` tools over stdio; no voice-approval tools by design
+      (see [docs/mcp.md](docs/mcp.md))
 - [ ] 🚧 Streaming ASR with partial hypotheses for real-time subtitles
 - [ ] 📋 Multi-user household mode: per-user voice profiles + personalized replies
 - [ ] 📋 Roll-call authentication: liveness check (randomized prompt replay)
