@@ -134,6 +134,27 @@ class ASRConfig:
 
 
 @dataclass
+class SidecarConfig:
+    """IndexTTS sidecar 客户端配置（主框架 -> 独立进程的克隆合成服务）。
+
+    enabled: 总开关，默认 False——不开 sidecar 时 TTS 行为与旧版完全
+    一致（仅 Edge-TTS），保证向后兼容；置 True 后
+    :func:`vocalis.voice.backends.router.build_router` 会把
+    IndexTTSClientBackend 加入路由（sidecar 不可达则自动降级 Edge）。
+    base_url / timeout_s: sidecar HTTP 地址与请求超时（克隆合成较慢）。
+    fallback_voice: 克隆音色降级到 Edge-TTS 时使用的兜底 preset 音色。
+    preset_map: 克隆音色名 -> preset 音色的显式降级映射（优先于
+    fallback_voice；TOML 内联表写法 ``{ li = "zh-CN-XiaoxiaoNeural" }``）。
+    """
+
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:8765"
+    timeout_s: float = 30.0
+    fallback_voice: str = "zh-CN-XiaoxiaoNeural"
+    preset_map: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class BrainConfig:
     """Local small-model (D-VOICE brain) configuration.
 
@@ -188,6 +209,7 @@ class VocalisConfig:
     wake_word: WakeWordConfig = field(default_factory=WakeWordConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
     asr: ASRConfig = field(default_factory=ASRConfig)
+    sidecar: SidecarConfig = field(default_factory=SidecarConfig)
     brain: BrainConfig = field(default_factory=BrainConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     cli_agents: list[CliAgentConfig] = field(default_factory=list)
