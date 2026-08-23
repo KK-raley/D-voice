@@ -26,18 +26,21 @@ Vocalis is under active development. This document tracks what is shipping next.
       EnergyVAD + TurnDetector (short pauses don't cut you off) +
       BargeInController (interrupt D-VOICE mid-sentence) + streaming
       chunking via RealtimeSession; `vocalis talk` full-duplex command
-      (see [docs/realtime.md](docs/realtime.md))
 - [x] ✅ D-VOICE as MCP server (pulled from v0.3, G8) — agents connect
       *to* D-VOICE: `speak` / `report_progress` / `get_status` /
       `dispatch_task` tools over stdio; no voice-approval tools by design
-      (see [docs/mcp.md](docs/mcp.md))
 - [ ] 🚧 Streaming ASR with partial hypotheses for real-time subtitles
 - [ ] 📋 Multi-user household mode: per-user voice profiles + personalized replies
 - [ ] 📋 Roll-call authentication: liveness check (randomized prompt replay)
 
 ## v0.3 — "Any Voice" (Q1 2027)
 
-- [ ] 📋 Voice cloning backend (XTTS-v2 / OpenVoice) for custom personas
+- [ ] 🚧 IndexTTS-2.5 voice-cloning backend (sidecar) + pluggable TTS router —
+      Edge-TTS (preset) ↔ IndexTTS (clone), GPU-optional with graceful
+      fallback, implemented on `dul-stream`
+- [ ] 🚧 Dual-stream orchestration (voice + tool, no text stream) — real-time
+      sentence-level streaming TTS + async tool worker pool; natural pause
+      (soft) ≠ barge-in (hard), implemented on `dul-stream`
 - [ ] 📋 Emotion & style control in TTS output (calm / excited / concise)
 - [ ] 📋 SSML generation for agent long-form responses
 - [ ] 📋 Auto-summarization: long agent output condensed before speech

@@ -17,7 +17,7 @@ is doing — in real time.
 [![Discussions](https://img.shields.io/github/discussions/KK-raley/D-voice?color=34d399&logo=github)](https://github.com/KK-raley/D-voice/discussions)
 [![Maintenance](https://img.shields.io/maintenance/yes/2027?color=34d399)](https://github.com/KK-raley/D-voice/graphs/commit-activity)
 
-[Quick start](#quick-start) · [Architecture](#architecture) · [MCP for agents](#mcp-server-for-coding-agents) · [How it works](#how-it-works) · [Local brains & CLI agents](docs/local-brains.md) · [Showcase](SHOWCASE.md) · [Roadmap](ROADMAP.md) · [Maintenance](MAINTENANCE.md) · [Contributing](CONTRIBUTING.md)
+[Quick start](#quick-start) · [Architecture](#architecture) · [MCP for agents](#mcp-server-for-coding-agents) · [How it works](#how-it-works) · [Showcase](SHOWCASE.md) · [Roadmap](ROADMAP.md) · [Maintenance](MAINTENANCE.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -39,7 +39,9 @@ layer** for the agentic era.
 | 🎛️ | **Voice your way** | Tunable `VoiceProfile`s — voice, rate, pitch, volume — adjustable live from the HUD's Voice Studio. Evening mode? Slower, warmer, quieter. |
 | 📡 | **Real-time status narration** | A local small model (Ollama / llama.cpp / LM Studio — any OpenAI-compatible server) turns raw agent events into calm spoken reports. |
 | 🔗 | **MCP server for agents** | Agents connect *to* D-VOICE over the Model Context Protocol (stdio) and call `speak` / `report_progress` / `get_status` / `dispatch_task`. Agents speak up proactively instead of the user polling a dashboard. |
-| 🧩 | **Pluggable ecosystem** | Third-party agents register via Python entry-points (`vocalis.agents` group) — no forking needed. Documented event hook contract ([docs/hooks.md](docs/hooks.md)). |
+| 🧩 | **Pluggable ecosystem** | Third-party agents register via Python entry-points (`vocalis.agents` group) — no forking needed; the event hook contract is documented in the codebase. |
+| ⚡ | **Dual-stream orchestration** | Voice + tool run as parallel streams on the event bus: sentence-level streaming TTS (real-time) and an async tool worker pool that never blocks speech. A natural *pause* (soft hold — finish what's said, then wait at a sentence boundary) is deliberately different from a *barge-in* (hard interrupt). Speech holds while tools work, like a real conversation. |
+| 🎭 | **Pluggable TTS backends** | `TTSRouter` capability negotiation — Edge-TTS (fixed presets, zero resources) ↔ IndexTTS-2.5 sidecar (voice cloning, offline, high expression). No GPU? Automatic fallback to Edge-TTS via voice mapping. |
 | 🧠 | **Ask-anything console** | Interrupt anytime with questions; the local brain answers with live system context, fully offline. |
 | 🤖 | **Command your agents** | Natural-language dispatch with fan-out: *"让 echo 跑个演示，然后 claude-code 重构测试"* → parallel dispatch + progress bars. |
 | 🛡️ | **Agent resilience** | Opt-in retry + circuit breaker. Task cancellation propagates to subprocesses. Connector health tracked (latency, error rate, failures). |
@@ -76,7 +78,7 @@ D-VOICE(TTS): 任务完成。claude-code 已修复全部 14 个测试，耗时 2
 pip install "vocalis-voice-agent[all]"
 
 # 2 · optional but recommended: give D-VOICE a local brain
-ollama pull qwen2.5:1.5b-instruct    # or see docs/local-brains.md for
+ollama pull qwen2.5:1.5b-instruct    # optional local brain; also works with
                                      # llama.cpp / LM Studio / Gemma on CPU
 
 # 3 · enroll YOUR voice (3 short takes)
@@ -138,8 +140,7 @@ so you can watch the HUD, narration and notifications work end-to-end.
 
 Everything is decoupled through an asyncio **event bus**: publishers emit
 typed events (`voice.rejected`, `task.progress`, `monitor.alert`, ...), and the
-HUD, monitor, narrator and notifier are all just subscribers. Deep dive:
-[`docs/architecture.md`](docs/architecture.md).
+HUD, monitor, narrator and notifier are all just subscribers.
 
 ---
 
@@ -208,7 +209,6 @@ vocalis/
 +-- ui/                    # React HUD (Vite . TS . zero UI deps)
 +-- examples/              # 01-enroll to 04-full-dvoice
 +-- tests/                 # offline pytest suite (3 OS x 3 py matrix in CI)
-+-- docs/                  # architecture . getting-started . hooks . mcp
 ```
 
 ---
@@ -247,7 +247,7 @@ Secrets (`OPENAI_API_KEY`, ...) are always environment variables — never store
 | Version | Theme | Highlights |
 | ------- | ----- | ---------- |
 | **v0.2** | Always Listening | wake-word, streaming ASR, realtime dialogue, MCP server, hook contract, agent resilience, voiceprint calibration |
-| **v0.3** | Any Voice | XTTS-v2 voice cloning, emotion control, deep protocol adapters, Piper offline TTS |
+| **v0.3** | Any Voice | IndexTTS-2.5 voice-cloning sidecar + pluggable TTS backends, dual-stream (voice+tool) orchestration, deep protocol adapters |
 | **v0.4** | Swarm Control | parallel fan-out board, proactive interruptions, tri-stream full-duplex model |
 | **v1.0** | Production | Tauri desktop shell, encrypted voiceprint vault, multi-user households |
 

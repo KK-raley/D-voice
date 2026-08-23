@@ -96,8 +96,6 @@ data/profiles/
 sessions/
 *.wav
 *.mp3
-!docs/assets/*.wav
-!docs/media/*.wav
 
 # IDE / editors
 .idea/
@@ -123,8 +121,8 @@ logs_*.zip
 # Local work logs (keep private, not for the public repo)
 工作日志/
 
-# Private research notes (tri-stream survey - for local reference only, not published)
-docs/research/
+# Internal docs (architecture, research, sidecar deployment) stay local - never upload
+/docs/
 
 # Framework state
 .streamlit/secrets.toml
