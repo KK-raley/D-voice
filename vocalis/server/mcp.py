@@ -281,7 +281,7 @@ def _load_mcp_server_cls() -> type:
         raise RuntimeError(f"The D-VOICE MCP server requires the 'mcp' SDK. {hint}") from e
 
 
-def build_mcp_server(ctx: DVoiceMCPContext) -> "FastMCP":
+def build_mcp_server(ctx: DVoiceMCPContext) -> FastMCP:
     """Build a FastMCP server exposing the four D-VOICE tools.
 
     On mcp 2.x the returned object is ``MCPServer`` (API-compatible
@@ -290,7 +290,7 @@ def build_mcp_server(ctx: DVoiceMCPContext) -> "FastMCP":
     the module itself always loads).
     """
     server_cls = _load_mcp_server_cls()
-    server: "FastMCP" = server_cls(
+    server: FastMCP = server_cls(
         "dvoice",
         instructions=(
             "D-VOICE 语音播报服务 / D-VOICE narration server. "

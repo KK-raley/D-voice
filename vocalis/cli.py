@@ -30,7 +30,7 @@ from rich.table import Table
 
 import vocalis
 from vocalis.agents.registry import build_default_registry
-from vocalis.config import VocalisConfig, WakeWordConfig
+from vocalis.config import VocalisConfig
 from vocalis.dvoice.assistant import DVoiceBrain
 from vocalis.dvoice.commander import Commander
 from vocalis.server.events import EventType, bus
@@ -143,7 +143,7 @@ def _parse_thresholds(raw: str | None) -> list[float]:
             f"[red]无效的 --thresholds：{escape(raw)}[/]"
             "（应为逗号分隔的小数，如 0.4,0.5,0.6）"
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if not values:
         console.print("[red]--thresholds 不能为空（如 0.4,0.5,0.6）[/]")
         raise typer.Exit(1)
