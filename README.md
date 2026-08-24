@@ -12,7 +12,7 @@ is doing — in real time.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/KK-raley/D-voice/ci.yml?branch=main&logo=github&label=CI)](https://github.com/KK-raley/D-voice/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](https://github.com/KK-raley/D-voice)
-[![License: MIT](https://img.shields.io/badge/license-MIT-818cf8.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Discussions](https://img.shields.io/github/discussions/KK-raley/D-voice?color=34d399&logo=github)](https://github.com/KK-raley/D-voice/discussions)
 [![Maintenance](https://img.shields.io/maintenance/yes/2027?color=34d399)](https://github.com/KK-raley/D-voice/graphs/commit-activity)
