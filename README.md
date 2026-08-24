@@ -282,7 +282,7 @@ pass offline; keep new dependencies justified.
 
 ## License
 
-[MIT](LICENSE) (c) Vocalis Contributors
+[GNU AGPL-3.0](LICENSE) (c) Vocalis Contributors
 
 ---
 
