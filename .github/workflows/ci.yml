@@ -68,7 +68,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v5
+        with:
+          # Use host networking so the buildkit builder pulls from a registry
+          # over the runner's NAT directly, reducing intermittent DockerHub
+          # timeouts ("request canceled while waiting for connection").
+          driver-opts: network=host
+      - uses: docker/build-push-action@v6
         with:
           context: .
           push: false

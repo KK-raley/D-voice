@@ -45,6 +45,14 @@ class EventType(str, Enum):
     DVOICE_COMMAND = "dvoice.command"
     MONITOR_ALERT = "monitor.alert"
 
+    # Command receipts + high-risk confirmation (P0 trust UX)
+    COMMAND_RECEIPT = "command.receipt"
+    CONFIRM_REQUESTED = "confirm.requested"
+    CONFIRM_RESOLVED = "confirm.resolved"
+
+    # Vision (screen monitoring independent of agent reports)
+    VISION_SCREEN = "vision.screen"
+
     # System
     SYSTEM = "system"
 
@@ -86,6 +94,22 @@ class EventBus:
 
     def on(self, pattern: str, handler: Handler) -> None:
         self._handlers[pattern].append(handler)
+
+    def off(self, pattern: str, handler: Handler) -> None:
+        """Unregister a handler previously added via :meth:`on`.
+
+        Matches by ``pattern`` + handler identity (bound methods compare equal
+        for the same instance + function, so ``bus.off(p, self.cb)`` removes
+        what ``bus.on(p, self.cb)`` registered). No-op if not found. Same
+        simple (lock-free) implementation style as :meth:`on`.
+        """
+        handlers = self._handlers.get(pattern)
+        if handlers is None:
+            return
+        if handler in handlers:
+            handlers.remove(handler)
+        if not handlers:
+            self._handlers.pop(pattern, None)
 
     # -- publish -------------------------------------------------------
     async def publish(self, type_: EventType | str, **data: Any) -> Event:

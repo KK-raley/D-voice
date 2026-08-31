@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -131,27 +132,126 @@ class TTSEngine:  # pragma: no cover - interface
 
 
 class EdgeTTSEngine(TTSEngine):
-    """Microsoft Edge neural voices - free, keyless, high quality."""
+    """Microsoft Edge neural voices - free, keyless, high quality.
+
+    微软服务偶发 "No audio was received"（令牌/限流抖动，实测约 1/3 概率），
+    所以这里做指数退避重试——单次失败绝不让回复静音。
+    """
 
     name = "edge"
+    _RETRIES = 1  # 首次失败后的额外尝试次数（更多重试会拖长限流期的降级延迟）
 
     async def synthesize(self, text: str, profile: VoiceProfile) -> bytes:
+        import asyncio
+
         import edge_tts
 
-        communicate = edge_tts.Communicate(
-            text=text,
-            voice=profile.voice,
-            rate=profile.rate,
-            pitch=profile.pitch,
-            volume=profile.volume,
+        last_err: Exception | None = None
+        for attempt in range(1 + self._RETRIES):
+            try:
+                communicate = edge_tts.Communicate(
+                    text=text,
+                    voice=profile.voice,
+                    rate=profile.rate,
+                    pitch=profile.pitch,
+                    volume=profile.volume,
+                )
+                chunks: list[bytes] = []
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        chunks.append(chunk["data"])
+                if chunks:
+                    return b"".join(chunks)
+                last_err = RuntimeError("edge-tts produced no audio")
+            except Exception as e:  # 瞬时故障（NoAudioReceived / 网络抖动）
+                last_err = e
+            if attempt < self._RETRIES:
+                await asyncio.sleep(0.6 * (attempt + 1))
+        raise RuntimeError(f"edge-tts failed after {1 + self._RETRIES} attempts: {last_err}")
+
+
+class SapiTTSEngine(TTSEngine):
+    """Windows SAPI5 本地引擎（Microsoft Huihui 等）——零网络兜底。
+
+    音质不如 Edge 神经语音，但 Edge 被限流 / 断网时保证回复仍有声音
+    （issue: "有时有语音有时没有"的最终兜底）。输出为 wav。
+
+    验收策略（P0-8）：本地引擎失败时**绝不回退到网络**——错误向上抛出，
+    由调用方以文字提示；受限环境（COM 被策略禁用、无系统语音）必须显式
+    报错而不是静默降级。
+    """
+
+    name = "sapi"
+
+    async def synthesize(self, text: str, profile: VoiceProfile) -> bytes:
+        if not text or not text.strip():
+            raise RuntimeError("sapi: empty text")
+        last_err: Exception | None = None
+        for _ in range(2):  # COM 偶发初始化抖动，重试一次
+            try:
+                audio = await asyncio.to_thread(self._synthesize_sync, text)
+                if audio[:4] != b"RIFF" or len(audio) < 100:
+                    raise RuntimeError("sapi produced empty/invalid wav output")
+                return audio
+            except Exception as e:
+                last_err = e
+        raise RuntimeError(
+            f"sapi synthesis failed after 2 attempts: {last_err} "
+            "(本地 TTS 失败时不回退网络；请检查系统语音或改用 edge 引擎)"
         )
-        chunks: list[bytes] = []
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                chunks.append(chunk["data"])
-        if not chunks:
-            raise RuntimeError("edge-tts produced no audio")
-        return b"".join(chunks)
+
+    def _synthesize_sync(self, text: str) -> bytes:
+        import os
+        import tempfile
+
+        try:
+            import pythoncom
+            import win32com.client
+        except ImportError as e:
+            raise RuntimeError(
+                "sapi 需要 pywin32（pip install pywin32）；当前环境不可用"
+            ) from e
+
+        pythoncom.CoInitialize()
+        try:
+            try:
+                voice = win32com.client.Dispatch("SAPI.SpVoice")
+            except Exception as e:
+                raise RuntimeError(f"SAPI.SpVoice COM 调度失败（受限环境常见）：{e}") from e
+            voices = list(voice.GetVoices())
+            if not voices:
+                raise RuntimeError("系统没有安装任何 SAPI 语音（设置 > 语音 > 添加语音）")
+            # 按文本语言挑声音：含 CJK -> 中文声音，否则找英文声音
+            has_cjk = any("一" <= ch <= "鿿" for ch in text)
+            for v in voices:
+                desc = v.GetDescription()
+                if (has_cjk and "Chinese" in desc) or (not has_cjk and "English" in desc):
+                    voice.Voice = v
+                    break
+            fd, path = tempfile.mkstemp(suffix=".wav")
+            os.close(fd)
+            try:
+                stream = win32com.client.Dispatch("SAPI.SpFileStream")
+                stream.Open(path, 3)  # SSFMCreateOrOverwrite
+                try:
+                    voice.AudioOutputStream = stream
+                    voice.Speak(text)
+                finally:
+                    # An unclosed stream keeps the wav locked on Windows and
+                    # the os.remove below would silently leak temp files.
+                    try:
+                        stream.Close()
+                    except Exception:
+                        pass
+                with open(path, "rb") as f:
+                    return f.read()
+            finally:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        finally:
+            pythoncom.CoUninitialize()
 
 
 class TTSService:
@@ -174,7 +274,12 @@ class TTSService:
     ) -> None:
         self.config = config or VocalisConfig.load()
         self.bus = event_bus or bus
-        self.engines: dict[str, TTSEngine] = engines or {EdgeTTSEngine.name: EdgeTTSEngine()}
+        self.engines: dict[str, TTSEngine] = engines or {
+            EdgeTTSEngine.name: EdgeTTSEngine(),
+            # SAPI is Windows-only; registering it elsewhere would add a
+            # guaranteed-failure hop to every edge degradation path.
+            **({SapiTTSEngine.name: SapiTTSEngine()} if os.name == "nt" else {}),
+        }
         self._pre_hooks: list[PreTextHook] = list(pre_hooks or [])
         self._post_hooks: list[PostTextHook] = list(post_hooks or [])
         self._profiles: dict[str, VoiceProfile] = {
@@ -282,11 +387,29 @@ class TTSService:
         try:
             audio_bytes = await engine.synthesize(text, profile)
         except Exception as e:
-            self._run_post_hooks(text, False)
-            return SpeakResult(ok=False, engine=engine_name, profile=profile.name, error=str(e))
+            # 主引擎（edge）失败 -> 本地 sapi 兜底，保证回复永远有声音
+            fallback = self.engines.get("sapi") if engine_name != "sapi" else None
+            if fallback is not None:
+                logger.warning("TTS engine '%s' failed (%s); falling back to local sapi", engine_name, e)
+                try:
+                    audio_bytes = await fallback.synthesize(text, profile)
+                    engine_name = "sapi"
+                except Exception as e2:
+                    self._run_post_hooks(text, False)
+                    return SpeakResult(
+                        ok=False,
+                        engine=engine_name,
+                        profile=profile.name,
+                        error=f"{e}; sapi fallback failed: {e2}",
+                    )
+            else:
+                self._run_post_hooks(text, False)
+                return SpeakResult(ok=False, engine=engine_name, profile=profile.name, error=str(e))
 
         key = hashlib.sha1(f"{text}|{profile.name}|{profile.voice}|{profile.rate}|{profile.pitch}|{profile.volume}".encode()).hexdigest()[:16]
-        path = audio_cache_dir() / f"{key}.mp3"
+        # 按真实内容选扩展名：sapi 产出 wav（winsound 可播），edge 产出 mp3
+        ext = "wav" if audio_bytes[:4] == b"RIFF" else "mp3"
+        path = audio_cache_dir() / f"{key}.{ext}"
         path.write_bytes(audio_bytes)
         self._run_post_hooks(text, True)
         return SpeakResult(

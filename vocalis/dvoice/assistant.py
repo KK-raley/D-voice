@@ -1,22 +1,8 @@
-"""DVoiceBrain: a local small language model that acts as the always-on
-operations narrator and conversational layer.
+"""Local Qwen conversation and deterministic operations narration.
 
-Two backend flavors are supported:
-
-* ``ollama`` - native Ollama API (qwen2.5, gemma3, llama3.2, ... pulled via
-  ``ollama pull``; CPU-only laptops are fine with 0.5b-1.5b q4 models).
-* ``openai-compatible`` - any server speaking the OpenAI chat-completions
-  protocol: llama.cpp-server, LM Studio, vLLM, Ollama's /v1 endpoint, or a
-  remote API. This lets D-VOICE ride any small model you can serve.
-
-Responsibilities:
-  * answer the user's questions in real time (fully local, private)
-  * translate raw agent progress events into natural spoken narration
-  * summarize system status on demand ("What's going on right now?")
-
-If the model server is unreachable the brain degrades gracefully to
-deterministic rule-based templates, so the ecosystem never goes mute.
-Degradation is always logged and surfaced as a ``monitor.alert`` event.
+Qwen runs in llama.cpp on loopback; no cloud account or key is required.
+Legacy local Ollama/compatible servers remain supported. Model failures are
+explicitly reported and rule replies are never represented as model inference.
 """
 
 from __future__ import annotations
@@ -29,6 +15,7 @@ import httpx
 
 from vocalis.agents.registry import AgentRegistry
 from vocalis.config import BrainConfig, VocalisConfig
+from vocalis.dvoice.local_qwen import ensure_local_qwen, probe_local_qwen, validate_local_url
 from vocalis.server.events import Event, EventBus, EventType, bus
 
 logger = logging.getLogger("vocalis.dvoice")
@@ -66,8 +53,16 @@ class DVoiceBrain:
         self.registry = registry
         self.bus = event_bus or bus
         self.history: list[dict[str, str]] = []
+        # P0-7 multi-user isolation: per-speaker dialogue histories + short
+        # local summaries. User A's context is never shown to user B; on
+        # sleep the speaker's history is cleared and replaced by a compact
+        # summary (rule-based - no LLM call) for that same user's next wake.
+        self.histories: dict[str, list[dict[str, str]]] = {}
+        self.summaries: dict[str, str] = {}
         self._ollama = None
         self._checked = False
+        self.last_reply_source: str | None = None
+        self.last_error: str | None = None
 
     # ------------------------------------------------------------------
     # Backend probing
@@ -85,7 +80,13 @@ class DVoiceBrain:
         try:
             import ollama
 
-            self._ollama = ollama.AsyncClient(host=self.brain_cfg.host)
+            host = self.brain_cfg.host
+            if self.brain_cfg.local_only:
+                host = validate_local_url(host)
+            self._ollama = ollama.AsyncClient(
+                host=host, timeout=self.brain_cfg.timeout_s, trust_env=False,
+                follow_redirects=False,
+            )
             return self._ollama
         except Exception as e:
             logger.warning("Ollama client unavailable (%s); using fallback replies", e)
@@ -99,9 +100,13 @@ class DVoiceBrain:
                 "(e.g. http://localhost:8080/v1 for llama.cpp-server, "
                 "http://localhost:1234/v1 for LM Studio)"
             )
+        if self.brain_cfg.local_only or self.brain_cfg.backend == "local-qwen":
+            return validate_local_url(base)
         return base.rstrip("/")
 
     def _openai_headers(self) -> dict[str, str]:
+        if self.brain_cfg.local_only or self.brain_cfg.backend == "local-qwen":
+            return {}  # Never forward a saved cloud secret to the local runtime.
         key = os.environ.get(self.brain_cfg.api_key_env, "not-needed")
         return {"Authorization": f"Bearer {key}"}
 
@@ -112,9 +117,17 @@ class DVoiceBrain:
             "temperature": self.brain_cfg.temperature,
             "max_tokens": self.brain_cfg.max_tokens,
         }
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        if self.brain_cfg.backend == "local-qwen":
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        base = self._openai_base()  # validate before constructing a network client
+        timeout = self.brain_cfg.timeout_s
+        if not 0 < timeout <= 600:
+            raise ValueError("brain.timeout_s must be between 0 and 600")
+        async with httpx.AsyncClient(
+            timeout=timeout, trust_env=False, follow_redirects=False
+        ) as client:
             resp = await client.post(
-                f"{self._openai_base()}/chat/completions",
+                f"{base}/chat/completions",
                 json=payload,
                 headers=self._openai_headers(),
             )
@@ -126,14 +139,23 @@ class DVoiceBrain:
     async def available(self) -> bool:
         if not self.brain_cfg.enabled:
             return False
+        if self.brain_cfg.backend == "local-qwen":
+            try:
+                status = await probe_local_qwen(self.brain_cfg)
+                return bool(status["available"])
+            except Exception:
+                return False
         if self.brain_cfg.backend == "openai-compatible":
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
+                base = self._openai_base()
+                async with httpx.AsyncClient(
+                    timeout=5.0, trust_env=False, follow_redirects=False
+                ) as client:
                     resp = await client.get(
-                        f"{self._openai_base()}/models",
+                        f"{base}/models",
                         headers=self._openai_headers(),
                     )
-                    return resp.status_code < 500
+                    return 200 <= resp.status_code < 300
             except Exception:
                 return False
         client = self._get_ollama()
@@ -148,6 +170,7 @@ class DVoiceBrain:
     async def _degrade(self, reason: str) -> None:
         """Make degradation visible instead of silently swallowing it."""
         logger.warning("D-VOICE brain degrading to rules: %s", reason)
+        self.last_error = reason
         await self.bus.publish(
             EventType.MONITOR_ALERT, message=f"D-VOICE local model unavailable: {reason}"
         )
@@ -155,9 +178,50 @@ class DVoiceBrain:
     # ------------------------------------------------------------------
     # Dialogue
     # ------------------------------------------------------------------
-    async def chat(self, user_text: str, context: dict[str, Any] | None = None) -> str:
-        """Real-time conversational reply (question answering)."""
-        context = context or {}
+    def _history_for(self, user: str | None) -> list[dict[str, str]]:
+        """Per-user history storage (P0-7); None = anonymous/global lane."""
+        if user is None:
+            return self.history
+        return self.histories.setdefault(user, [])
+
+    def end_session(self, user: str | None, reason: str = "sleep") -> str | None:
+        """Clear one speaker's context on sleep; keep a short local summary.
+
+        Rule-based (no LLM call, safe inside sync sleep paths). The summary
+        is reintroduced only to the *same* user on their next wake, so a
+        later speaker can never touch the previous speaker's context.
+        """
+        if user is None:
+            self.history = []
+            return None
+        history = self.histories.get(user) or []
+        turns = len(history) // 2
+        last_user = next(
+            (m["content"] for m in reversed(history) if m["role"] == "user"), ""
+        )
+        summary = (
+            f"（上次会话摘要 · {turns} 轮 · 因{reason}结束）"
+            f"最后的请求：{last_user[:80]}" if turns else ""
+        )
+        self.summaries[user] = summary
+        self.histories[user] = []
+        return summary or None
+
+    async def chat(
+        self, user_text: str, context: dict[str, Any] | None = None,
+        user: str | None = None,
+    ) -> str:
+        """Real-time conversational reply (question answering).
+
+        ``user`` pins the dialogue to one speaker's isolated history (P0-7).
+        """
+        context = dict(context or {})
+        history = self._history_for(user)
+        if user is not None and not history and self.summaries.get(user):
+            # Same user returned: reintroduce only their own short summary.
+            context.setdefault("previous_session", self.summaries[user])
+        self.last_reply_source = None
+        self.last_error = None
         messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         if context:
             messages.append(
@@ -167,15 +231,22 @@ class DVoiceBrain:
                     + "\n".join(f"- {k}: {v}" for k, v in context.items()),
                 }
             )
-        messages.extend(self.history[-8:])
+        messages.extend(history[-8:])
         messages.append({"role": "user", "content": user_text})
 
-        if self.brain_cfg.backend == "openai-compatible":
+        if not self.brain_cfg.enabled:
+            self.last_error = "Local model is disabled"
+        elif self.brain_cfg.backend in {"local-qwen", "openai-compatible"}:
             try:
+                if self.brain_cfg.backend == "local-qwen" and self.brain_cfg.auto_start:
+                    status = await ensure_local_qwen(self.brain_cfg)
+                    if not status["available"]:
+                        raise RuntimeError(status.get("error") or status["status"])
                 reply = await self._chat_openai(messages)
                 if not reply:
                     raise ValueError("empty reply from local model")
-                self._remember(user_text, reply)
+                self._remember(user_text, reply, user)
+                self.last_reply_source = "local-model" if self.brain_cfg.local_only else "model"
                 return reply
             except Exception as e:
                 await self._degrade(str(e))
@@ -194,15 +265,21 @@ class DVoiceBrain:
                     reply = _first(resp).strip()
                     if not reply:
                         raise ValueError("empty reply from local model")
-                    self._remember(user_text, reply)
+                    self._remember(user_text, reply, user)
+                    self.last_reply_source = "local-model" if self.brain_cfg.local_only else "model"
                     return reply
                 except Exception as e:
                     await self._degrade(str(e))
+            else:
+                await self._degrade("Local backend is unavailable or unsupported")
         if self.brain_cfg.fallback_to_rules:
             reply = await self._rule_reply(user_text, context)
-            self._remember(user_text, reply)
+            self.last_reply_source = "rules"
+            reply = "[规则回复：本地模型未连接] " + reply
+            self._remember(user_text, reply, user)
             return reply
-        return "(d-voice offline)"
+        self.last_reply_source = "offline"
+        return "(d-voice offline: local model unavailable)"
 
     # ------------------------------------------------------------------
     # Narration of agent events
@@ -251,11 +328,16 @@ class DVoiceBrain:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
-    def _remember(self, user_text: str, reply: str) -> None:
-        self.history.append({"role": "user", "content": user_text})
-        self.history.append({"role": "assistant", "content": reply})
-        if len(self.history) > 40:
-            self.history = self.history[-40:]
+    def _remember(self, user_text: str, reply: str, user: str | None = None) -> None:
+        history = self._history_for(user)
+        history.append({"role": "user", "content": user_text})
+        history.append({"role": "assistant", "content": reply})
+        if len(history) > 40:
+            trimmed = history[-40:]
+            if user is None:
+                self.history = trimmed
+            else:
+                self.histories[user] = trimmed
 
     async def _rule_reply(self, user_text: str, context: dict[str, Any]) -> str:
         """Deterministic fallback dialogue (no local model available)."""
@@ -269,6 +351,6 @@ class DVoiceBrain:
         if text.endswith("?") or text.endswith("？"):
             return (
                 "My local reasoning core is offline, but I can report task status, "
-                "dispatch agents, and adjust my voice. Start Ollama for full dialogue."
+                "dispatch agents, and adjust my voice. Start local Qwen for full dialogue."
             )
         return "Understood. Say 'status' for a report, or give me a task to dispatch."

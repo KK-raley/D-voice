@@ -76,6 +76,7 @@ ENV/
 .dmypy.json
 dmypy.json
 .ruff_cache/
+.tools/
 .pyre/
 
 # PyPI configuration file
@@ -91,6 +92,7 @@ ui/tsconfig.tsbuildinfo
 # Runtime data (voiceprints are personal biometric data - never commit)
 .vocalis/
 *.voiceprofile
+*.voiceprofile.json
 *.npy
 data/profiles/
 sessions/
@@ -123,7 +125,7 @@ logs_*.zip
 # Local work logs (keep private, not for the public repo)
 工作日志/
 
-# Private research notes (tri-stream survey - for local reference only, not published)
+# Private research notes (tri-stream survey, IndexTTS-2.5 report) - local only, not published
 docs/research/
 
 # Framework state

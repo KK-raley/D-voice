@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vocalis-voice-agent"
-version = "0.1.0"
+version = "0.2.0rc1"
 description = "Vocalis - A voice-first, D-VOICE-style agent ecosystem with speaker authentication, unified TTS, and local-model task monitoring."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0-only" }
 authors = [
     { name = "Vocalis Contributors" },
 ]
@@ -25,7 +25,7 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -54,6 +54,7 @@ voice = [
     "edge-tts>=6.1",
     "sounddevice>=0.4.6",
     "scipy>=1.10",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 voiceprint = [
     # ERes2Net-large (3D-Speaker SOTA) speaker verification via ModelScope
@@ -76,8 +77,13 @@ mcp = [
     # MCP (Model Context Protocol) server for coding-agent integration
     "mcp>=1.0",
 ]
+stress = [
+    # Long-run standby metrics (P0-3); optional - the recorder degrades to
+    # uptime/thread counts without it.
+    "psutil>=5.9",
+]
 all = [
-    "vocalis-voice-agent[voice,local-brain,wakeword,mcp]",
+    "vocalis-voice-agent[voice,local-brain,wakeword,mcp,stress]",
 ]
 dev = [
     "pytest>=8.0",
@@ -120,3 +126,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# 缺 pytest-asyncio 时 async 测试会被静默跳过且 exit 0——升级为硬错误。
+# 注意：不能写 error::pytest.PytestUnhandledCoroutineWarning——该警告类在
+# pytest 8.4 已移除（未处理协程测试直接 fail），引用它会让 8.4+ 启动即崩；
+# 故按消息文本匹配（8.0~8.3 该警告即此文本；8.4+ 无此警告，规则无副作用）。
+filterwarnings = ["error:async def functions are not natively supported"]
