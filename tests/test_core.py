@@ -217,7 +217,7 @@ class TestBrainOpenAICompat:
         monkeypatch.setattr("vocalis.dvoice.assistant.httpx.AsyncClient", FakeClient)
         reply = asyncio.run(brain.chat("status?"))
         assert reply == "All good."
-        assert FakeClient.last_url == "http://localhost:9999/v1/chat/completions"
+        assert FakeClient.last_url == "http://127.0.0.1:9999/v1/chat/completions"
         assert FakeClient.last_json["model"] == cfg.brain.model
 
     def test_base_url_required_for_compat(self):
@@ -315,3 +315,316 @@ class TestCommander:
         plan = commander.plan("让echo 做第一件事；然后 echo 做第二件事")
         assert len(plan.assignments) == 2
         assert plan.assignments[0][0] == "echo"
+
+
+class TestServerListen:
+    """POST /api/listen 安全语音入口（离线桩解码、声纹和转写）。
+
+    lifespan 会构造真实 AppState，所以在 TestClient 启动"之后"替换
+    state.transcriber / 打桩 decode_audio，而不是替换 state 本身。
+    """
+
+    @staticmethod
+    def _stub_transcribe(text="你好，今天天气怎么样", fail=False):
+        import vocalis.voice.asr as asr_module
+        from vocalis.voice.asr import Transcription
+
+        calls = []
+
+        class Stub:
+            def transcribe(self, audio, sample_rate=16000):
+                if fail:
+                    raise RuntimeError("faster-whisper is required for ASR")
+                calls.append(sample_rate)
+                return Transcription(text=text, language="zh", segments=[])
+
+        monkey_target = Stub
+        return asr_module, Transcription, calls, monkey_target
+
+    def test_listen_rejects_empty_body(self):
+        from fastapi.testclient import TestClient
+
+        import vocalis.server.app as app_module
+
+        with TestClient(app_module.app) as client:
+            r = client.post("/api/listen", content=b"")
+        assert r.status_code == 400
+
+    def test_listen_undecodable_audio_is_400(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        import vocalis.server.app as app_module
+        import vocalis.voice.asr as asr_module
+
+        def bad_decode(data, max_duration_s):
+            raise ValueError("bad")
+
+        monkeypatch.setattr(asr_module, "decode_audio", bad_decode)
+        with TestClient(app_module.app) as client:
+            r = client.post("/api/listen", content=b"garbage")
+        assert r.status_code == 400
+        assert "cannot decode" in r.json()["detail"]
+
+    def test_listen_transcribes_and_caches_transcriber(self, monkeypatch):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        import numpy as np
+        from fastapi.testclient import TestClient
+
+        import vocalis.server.app as app_module
+        import vocalis.voice.asr as asr_module
+        import vocalis.voice.gate as gate_module
+        from vocalis.voice.asr import Transcription
+
+        calls = []
+
+        class Stub:
+            def transcribe(self, audio, sample_rate=16000):
+                calls.append(sample_rate)
+                text = "你好 d-voice" if len(calls) == 1 else "你好，今天天气怎么样"
+                return Transcription(text=text, language="zh", segments=[{
+                    "words": [{"word": text, "start": 0.1, "end": 0.9}],
+                }])
+
+        monkeypatch.setattr(
+            asr_module, "decode_audio",
+            lambda data, max_duration_s: (np.full(44100, 0.1, dtype=np.float32), 44100),
+        )
+        monkeypatch.setattr(asr_module, "Transcriber", lambda cfg: Stub())
+        monkeypatch.setattr(gate_module, "VoiceGate", lambda cfg: SimpleNamespace(
+            verify=lambda audio, sample_rate: SimpleNamespace(
+                accepted=True, user="owner", similarity=0.95),
+        ))
+        with TestClient(app_module.app) as client:
+            st = app_module.state
+            st.transcriber = None
+            st.commander.execute = AsyncMock(return_value={"reply": "天气晴朗"})
+            r = client.post("/api/listen", content=b"fake-webm")
+            assert r.status_code == 200
+            assert r.json()["kind"] == "wake"
+            assert r.json()["text"] == ""  # waking only authenticates; no command yet
+            st.commander.execute.assert_not_awaited()
+            assert calls == [44100]  # 解码采样率被透传
+            cached = st.transcriber
+            assert cached is not None  # 已缓存
+            r2 = client.post("/api/listen", content=b"fake-webm")
+            assert r2.status_code == 200
+            assert r2.json()["text"] == "你好，今天天气怎么样"
+            assert r2.json()["kind"] == "command"
+            st.commander.execute.assert_awaited_once_with(
+                "你好，今天天气怎么样", user="owner", voiceprint="accepted"
+            )
+            assert st.transcriber is cached  # 复用同一实例
+
+    def test_listen_missing_voice_stack_is_503(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        import vocalis.server.app as app_module
+        import vocalis.voice.asr as asr_module
+
+        def no_av(data, max_duration_s):
+            raise RuntimeError("PyAV is required")
+
+        monkeypatch.setattr(asr_module, "decode_audio", no_av)
+        with TestClient(app_module.app) as client:
+            r = client.post("/api/listen", content=b"fake")
+        assert r.status_code == 503
+
+    def test_listen_transcriber_failure_fails_closed(self, monkeypatch):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        import numpy as np
+        from fastapi.testclient import TestClient
+
+        import vocalis.server.app as app_module
+        import vocalis.voice.asr as asr_module
+        import vocalis.voice.gate as gate_module
+
+        class Broken:
+            def transcribe(self, audio, sample_rate=16000):
+                raise RuntimeError("faster-whisper is required for ASR")
+
+        monkeypatch.setattr(
+            asr_module, "decode_audio",
+            lambda data, max_duration_s: (np.full(16000, 0.1, dtype=np.float32), 16000),
+        )
+        monkeypatch.setattr(asr_module, "Transcriber", lambda cfg: Broken())
+        monkeypatch.setattr(gate_module, "VoiceGate", lambda cfg: SimpleNamespace(
+            verify=lambda audio, sample_rate: SimpleNamespace(
+                accepted=True, user="owner", similarity=0.95),
+        ))
+        with TestClient(app_module.app) as client:
+            app_module.state.commander.execute = AsyncMock()
+            r = client.post("/api/listen", content=b"fake")
+            app_module.state.commander.execute.assert_not_awaited()
+        assert r.status_code == 200
+        assert r.json()["kind"] == "error"
+        assert r.json()["state"] == "standby"
+        assert r.json()["reason"] == "local_processing_failed"
+        assert r.json()["text"] == ""
+
+
+class TestBrainProbe:
+    """available() 对远程 API 401/403 必须报离线（防止假'在线'）。"""
+
+    @staticmethod
+    def _brain_with_status(status: int):
+        import asyncio
+
+        from vocalis.config import VocalisConfig
+        from vocalis.dvoice.assistant import DVoiceBrain
+
+        cfg = VocalisConfig()
+        cfg.brain.backend = "openai-compatible"
+        cfg.brain.base_url = "http://localhost:9999/v1"
+        brain = DVoiceBrain(config=cfg)
+
+        class FakeResp:
+            def __init__(self, code):
+                self.status_code = code
+
+        class FakeClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return None
+
+            async def get(self, url, headers=None):
+                return FakeResp(status)
+
+        import vocalis.dvoice.assistant as assistant_module
+
+        orig = assistant_module.httpx.AsyncClient
+        assistant_module.httpx.AsyncClient = FakeClient
+        try:
+            return asyncio.run(brain.available())
+        finally:
+            assistant_module.httpx.AsyncClient = orig
+
+    def test_401_is_offline(self):
+        assert self._brain_with_status(401) is False
+
+    def test_403_is_offline(self):
+        assert self._brain_with_status(403) is False
+
+    def test_200_is_online(self):
+        assert self._brain_with_status(200) is True
+
+
+class TestCommanderVoiceRouting:
+    """语音无标点的意图路由：问句/中性语句 -> 大脑，祈使句 -> 派发。"""
+
+    @staticmethod
+    def _commander():
+        from vocalis.agents.echo import EchoAgent
+        from vocalis.agents.registry import AgentRegistry
+        from vocalis.dvoice.commander import Commander
+
+        registry = AgentRegistry()
+        registry.register(EchoAgent())
+        return Commander(registry)
+
+    def test_asr_question_without_punctuation_goes_to_brain(self):
+        """回归：无标点、问话词在句中的提问曾被误派发为 echo 任务。"""
+        plan = self._commander().plan("你的名字叫什么你能不能看到我目前的桌面你又没有监视的功能")
+        assert plan.question is not None
+        assert not plan.assignments
+
+    def test_neutral_sentence_goes_to_brain(self):
+        plan = self._commander().plan("写一首关于秋天的诗")
+        assert plan.question is not None
+
+    def test_imperative_still_dispatches(self):
+        plan = self._commander().plan("帮我重构测试文件")
+        assert plan.assignments
+        assert plan.question is None
+
+    def test_english_imperative_still_dispatches(self):
+        plan = self._commander().plan("run the release summary")
+        assert plan.assignments
+
+
+class TestServerVision:
+    """/api/vision/* 视觉端点 + 命令管线视觉意图路由（完全离线桩）。"""
+
+    @staticmethod
+    def _stub_observation():
+        from vocalis.vision.screen import ScreenObservation
+
+        return ScreenObservation(
+            title="ZCode",
+            text="测试文本第一行\n测试文本第二行",
+            lines=["测试文本第一行", "测试文本第二行"],
+            engine="stub",
+        )
+
+    @staticmethod
+    def _install(monkeypatch):
+        import vocalis.server.app as app_module
+        import vocalis.vision.screen as screen_module
+
+        async def fake_observe(**kw):
+            return TestServerVision._stub_observation()
+
+        monkeypatch.setattr(screen_module, "observe_screen", fake_observe)
+        return app_module
+
+    def test_vision_look_answers_with_screen_context(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        app_module = self._install(monkeypatch)
+        with TestClient(app_module.app) as client:
+            r = client.post("/api/vision/look", json={"question": "屏幕上有什么？"})
+            assert r.status_code == 200
+            body = r.json()
+            assert body["ok"] is True
+            assert body["title"] == "ZCode"
+            assert "测试文本第一行" in body["text"]
+            assert body["reply"]  # 规则兜底也应有回复
+
+    def test_vision_look_without_question_returns_digest_only(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        app_module = self._install(monkeypatch)
+        with TestClient(app_module.app) as client:
+            r = client.post("/api/vision/look", json={})
+            assert r.status_code == 200
+            body = r.json()
+            assert body["reply"] == ""
+            assert "测试文本" in body["text"]
+
+    def test_command_vision_intent_routes_to_vision(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        app_module = self._install(monkeypatch)
+        with TestClient(app_module.app) as client:
+            r = client.post("/api/command", json={"text": "你能不能看到我目前的桌面", "speak": False})
+            assert r.status_code == 200
+            assert r.json()["kind"] == "vision"
+
+    def test_command_imperative_with_keyword_still_dispatches(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        app_module = self._install(monkeypatch)
+        with TestClient(app_module.app) as client:
+            r = client.post("/api/command", json={"text": "让 echo 监视测试", "speak": False})
+            assert r.status_code == 200
+            assert r.json()["kind"] != "vision"
+
+    def test_screen_watch_toggle(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        app_module = self._install(monkeypatch)
+        with TestClient(app_module.app) as client:
+            r = client.post("/api/vision/watch", json={"enabled": True, "interval_s": 0.05})
+            assert r.status_code == 200
+            assert r.json()["running"] is True
+            r2 = client.post("/api/vision/watch", json={"enabled": False})
+            assert r2.status_code == 200
+            assert r2.json()["running"] is False

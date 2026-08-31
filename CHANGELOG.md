@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Real-speaker, replay-resistance and long-run acceptance remain before a final
+release. No production release or remote publication was performed here.
+
+## [0.2.0rc1] - 2026-08-31
+
+### Added
+- Secure always-on `StandbySession`: speaker-bound wake timestamps, overlapping
+  speaker checks, wake-only acknowledgement, same-user follow-ups, idle timeout
+  and local sleep. Standby has no command dispatch or ambient transcript output.
+- Bounded asynchronous microphone runner shared by CLI and HUD; overflow/long
+  speech closes the session and drains audio until silence.
+- Local Qwen3 backend for `D:\qwen-deployment`: explicit startup/check/migration,
+  loopback-only default, no cloud keys/proxies/redirects, disabled thinking,
+  model identity checks and explicitly labelled rules fallback.
+- `start-local.ps1`: workspace-local state, offline cached speech models,
+  enrollment/listen/serve/check modes and Windows SAPI output.
+- Independent product, lifecycle, local-model and real audio-decode tests.
+
+### Fixed
+- Browser uploads and `talk` bypassing speaker/wake checks; concurrent upload
+  and continuous microphone race; force-cut speech tail becoming new commands.
+- Audio normalization, sample-rate conversion, bounded uploads; speech and
+  sensitive history authorization; WAV MIME; overlapping sentence playback.
+- Transactional local URL validation; disabled brain making model requests;
+  unavailable models falsely reported online; package version/license drift.
+
+### Changed
+- Safe butler is half duplex: audio during inference/playback is discarded.
+  Experimental realtime/dual-stream modules remain for further development.
+- Local-only mode does not automatically register built-in cloud agents;
+  explicit CLI and third-party integrations retain separate privacy boundaries.
+- Candidate version only; see [acceptance](docs/acceptance-0.2.md) for limits.
+
+## Earlier unreleased development (retained history)
+
 ### Added
 - **Hook contract & extensibility** (Track C, G-survey W2 pulled forward):
   - [docs/hooks.md](docs/hooks.md): the documented event-hook contract —

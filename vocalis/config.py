@@ -62,6 +62,19 @@ class WakeWordConfig:
 
 
 @dataclass
+class StandbyConfig:
+    """Local authenticated listening; there is deliberately no bypass flag."""
+
+    idle_timeout_s: float = 30.0
+    max_utterance_s: float = 15.0
+    min_utterance_s: float = 0.5
+    energy_floor: float = 0.005
+    sleep_phrases: list[str] = field(
+        default_factory=lambda: ["休眠", "睡觉吧", "停止聆听", "go to sleep"]
+    )
+
+
+@dataclass
 class TTSConfig:
     """Text-to-speech defaults and the active voice profile.
 
@@ -156,25 +169,30 @@ class SidecarConfig:
 
 @dataclass
 class BrainConfig:
-    """Local small-model (D-VOICE brain) configuration.
+    """Local Qwen inference; loopback HTTP is inter-process transport only.
 
-    backend: "ollama" (native API) or "openai-compatible" (any server that
-    speaks the OpenAI chat-completions protocol: llama.cpp, LM Studio, vLLM,
-    Ollama's own /v1 endpoint, remote APIs...).
-    host: Ollama base URL (backend="ollama").
-    base_url: OpenAI-compatible base URL, e.g. http://localhost:8080/v1 for
-    llama.cpp-server or http://localhost:1234/v1 for LM Studio.
-    api_key_env: env var holding the API key (optional for local servers).
-    CPU-friendly models: qwen2.5:0.5b/1.5b, gemma3:1b, llama3.2:1b via
-    Ollama; any GGUF q4 quant via llama.cpp.
+    Existing Ollama and compatible local servers remain supported. Remote
+    endpoints are rejected by default, including in older saved configs.
+    Runtime startup is explicit; status probes never generate model tokens.
     """
 
-    backend: str = "ollama"
+    backend: str = "local-qwen"
     enabled: bool = True
+    local_only: bool = True
     host: str = "http://localhost:11434"
-    base_url: str | None = None
+    base_url: str | None = "http://127.0.0.1:8080/v1"
     api_key_env: str = "DVOICE_API_KEY"
-    model: str = "qwen2.5:1.5b-instruct"
+    model: str = "qwen3-4b-q4_k_m.gguf"
+    # No machine-specific default: configure via `vocalis brain --deployment-dir`
+    # or config.toml; probes fail with a clear message when it is unset.
+    deployment_dir: str = ""
+    model_file: str = "models/qwen3-4b-q4_k_m.gguf"
+    runtime_file: str = "runtime/llama-server.exe"
+    timeout_s: float = 120.0
+    startup_timeout_s: float = 90.0
+    auto_start: bool = False
+    context_size: int = 4096
+    threads: int = 4
     temperature: float = 0.6
     max_tokens: int = 512
     # Rule-based fallback when the local model server is unreachable.
@@ -207,6 +225,7 @@ class MonitorConfig:
 class VocalisConfig:
     voice_gate: VoiceGateConfig = field(default_factory=VoiceGateConfig)
     wake_word: WakeWordConfig = field(default_factory=WakeWordConfig)
+    standby: StandbyConfig = field(default_factory=StandbyConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
     asr: ASRConfig = field(default_factory=ASRConfig)
     sidecar: SidecarConfig = field(default_factory=SidecarConfig)
@@ -281,6 +300,37 @@ class VocalisConfig:
 
 def home_dir() -> Path:
     return _home_dir()
+
+
+def secrets_env_path() -> Path:
+    """Protected KEY=VALUE file for API keys (never stored in config.toml)."""
+    p = _home_dir() / "secrets.env"
+    try:
+        p.chmod(0o600)
+    except OSError:
+        pass  # e.g. Windows filesystems without POSIX perms
+    return p
+
+
+def load_secrets_env() -> None:
+    """Load KEY=VALUE pairs from ~/.vocalis/secrets.env into os.environ.
+
+    Values already present in the environment win (an explicit export beats
+    the file). This keeps secrets out of config.toml while letting the HUD
+    or headless setups supply API keys without terminal exports.
+    """
+    p = secrets_env_path()
+    if not p.exists():
+        return
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ.setdefault(key, value)
 
 
 def profiles_dir() -> Path:

@@ -20,6 +20,7 @@ raising when the library disappears at call time.
 from __future__ import annotations
 
 import logging
+import re
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -52,19 +53,23 @@ def _normalize(text: str) -> str:
 def _find_phrase(text: str, phrases: list[str]) -> str | None:
     """Return the first phrase occurring in *text*, or None (normalized)."""
     norm_text = _normalize(text)
+    norm_text = re.sub(r"(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])", "", norm_text)
     if not norm_text:
         return None
-    despaced_text = norm_text.replace(" ", "")
     for phrase in phrases:
         norm_phrase = _normalize(phrase)
         if not norm_phrase:
             continue
-        # Direct substring: Chinese phrases need nothing more. The fully
-        # despaced comparison additionally tolerates ASR output such as
-        # "你好d voice" or "hey dvoice" where word spacing is off.
-        if norm_phrase in norm_text or (
-            norm_phrase.replace(" ", "") in despaced_text
-        ):
+        # Permit missing ASR spaces, but never match Latin wake words inside
+        # another word ("computer" must not match "supercomputer"). CJK
+        # naturally has no word boundaries, so keep substring matching there.
+        parts = norm_phrase.split()
+        pattern = r"\s*".join(re.escape(part) for part in parts)
+        if norm_phrase[0].isascii() and norm_phrase[0].isalnum():
+            pattern = r"(?<![a-z0-9])" + pattern
+        if norm_phrase[-1].isascii() and norm_phrase[-1].isalnum():
+            pattern += r"(?![a-z0-9])"
+        if re.search(pattern, norm_text):
             return phrase
     return None
 
@@ -160,6 +165,8 @@ class WakeWordDetector:
     # -- asr path -----------------------------------------------------------
     def process_text(self, text: str, now: float | None = None) -> WakeHit:
         """Match an ASR transcription (may be empty) against the wake phrases."""
+        if not self.config.enabled:
+            return WakeHit(detected=False, phrase=None, backend="asr", score=0.0)
         phrase = _find_phrase(text, self.config.phrases)
         if phrase is None:
             return WakeHit(detected=False, phrase=None, backend="asr", score=0.0)
@@ -173,6 +180,8 @@ class WakeWordDetector:
     # -- openwakeword path ----------------------------------------------------
     def process_audio(self, audio: np.ndarray, sample_rate: int) -> WakeHit:
         """Score an audio chunk with openwakeword (missing dep = plain miss)."""
+        if not self.config.enabled:
+            return WakeHit(detected=False, phrase=None, backend="openwakeword", score=0.0)
         if not self._openwakeword_available():
             logger.warning(
                 "process_audio called but openwakeword is not importable; "
@@ -193,7 +202,9 @@ class WakeWordDetector:
             )
             self._oww_model = openwakeword.Model(wakeword_models=[self.config.model])
 
-        score = self._score_for(self._oww_model.predict(audio16))
+        # openWakeWord consumes 16-bit PCM, not normalized float samples.
+        pcm16 = (np.clip(audio16, -1.0, 1.0) * 32767).astype(np.int16)
+        score = self._score_for(self._oww_model.predict(pcm16))
         if score < self.config.threshold:
             return WakeHit(detected=False, phrase=None, backend="openwakeword", score=score)
         if not self._accept(time.monotonic()):
@@ -214,8 +225,6 @@ class WakeWordDetector:
             for name, value in scores.items():
                 if self.config.model in str(name):
                     return float(value)
-            if scores:
-                return max(float(v) for v in scores.values())
             return 0.0
         try:
             return float(scores)

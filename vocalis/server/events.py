@@ -45,6 +45,14 @@ class EventType(str, Enum):
     DVOICE_COMMAND = "dvoice.command"
     MONITOR_ALERT = "monitor.alert"
 
+    # Command receipts + high-risk confirmation (P0 trust UX)
+    COMMAND_RECEIPT = "command.receipt"
+    CONFIRM_REQUESTED = "confirm.requested"
+    CONFIRM_RESOLVED = "confirm.resolved"
+
+    # Vision (screen monitoring independent of agent reports)
+    VISION_SCREEN = "vision.screen"
+
     # System
     SYSTEM = "system"
 

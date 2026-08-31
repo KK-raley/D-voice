@@ -76,6 +76,7 @@ ENV/
 .dmypy.json
 dmypy.json
 .ruff_cache/
+.tools/
 .pyre/
 
 # PyPI configuration file
@@ -91,6 +92,7 @@ ui/tsconfig.tsbuildinfo
 # Runtime data (voiceprints are personal biometric data - never commit)
 .vocalis/
 *.voiceprofile
+*.voiceprofile.json
 *.npy
 data/profiles/
 sessions/

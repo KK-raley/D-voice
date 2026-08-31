@@ -8,5 +8,5 @@ Vocalis binds three capabilities into one local-first stack:
    status in real time, answers questions, and commands agents on your behalf.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.2.0rc1"
 __all__ = ["__version__"]

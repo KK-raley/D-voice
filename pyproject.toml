@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vocalis-voice-agent"
-version = "0.1.0"
+version = "0.2.0rc1"
 description = "Vocalis - A voice-first, D-VOICE-style agent ecosystem with speaker authentication, unified TTS, and local-model task monitoring."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0-only" }
 authors = [
     { name = "Vocalis Contributors" },
 ]
@@ -54,6 +54,7 @@ voice = [
     "edge-tts>=6.1",
     "sounddevice>=0.4.6",
     "scipy>=1.10",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 voiceprint = [
     # ERes2Net-large (3D-Speaker SOTA) speaker verification via ModelScope
@@ -76,8 +77,13 @@ mcp = [
     # MCP (Model Context Protocol) server for coding-agent integration
     "mcp>=1.0",
 ]
+stress = [
+    # Long-run standby metrics (P0-3); optional - the recorder degrades to
+    # uptime/thread counts without it.
+    "psutil>=5.9",
+]
 all = [
-    "vocalis-voice-agent[voice,local-brain,wakeword,mcp]",
+    "vocalis-voice-agent[voice,local-brain,wakeword,mcp,stress]",
 ]
 dev = [
     "pytest>=8.0",

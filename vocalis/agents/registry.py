@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
-from vocalis.agents.base import AgentConnector, TaskRecord
+from vocalis.agents.base import AgentConnector, TaskRecord, TaskStatus
 from vocalis.server.events import EventBus, EventType, bus
 
 logger = logging.getLogger("vocalis.agents")
@@ -17,6 +17,8 @@ class AgentRegistry:
         self.bus = event_bus or bus
         self.connectors: dict[str, AgentConnector] = {}
         self.history: list[TaskRecord] = []
+        # Running dispatch tasks by record id (receipt-card cancel entry).
+        self._running: dict[str, asyncio.Task[TaskRecord]] = {}
 
     # -- registration --------------------------------------------------
     def register(self, connector: AgentConnector) -> AgentConnector:
@@ -58,14 +60,38 @@ class AgentRegistry:
         # carry the same id (the HUD relies on this for task timelines).
         record = TaskRecord(agent=agent, instruction=instruction)
         await self.bus.publish(EventType.TASK_QUEUED, **record.to_dict())
+        # Run the connector in a tracked task so cancel_task(record_id) can
+        # abort a running dispatch (P0-6 receipt-card cancel entry).
+        task = asyncio.create_task(connector.run(instruction, record=record, **kw))
+        self._running[record.id] = task
         try:
-            record = await connector.run(instruction, record=record, **kw)
+            record = await task
         except asyncio.CancelledError:
             # 取消的任务同样进 history（与 completed/failed 对称，HUD recent 可见）。
+            record.status = TaskStatus.CANCELLED
             self._append_history(record)
             raise
+        finally:
+            self._running.pop(record.id, None)
         self._append_history(record)
         return record
+
+    def cancel_task(self, record_id: str) -> bool:
+        """Abort a running dispatch; True if cancellation was requested.
+
+        The verdict comes from ``task.cancel()`` itself: it is False when the
+        task already finished, which closes the done-check/cancel TOCTOU gap.
+        """
+        task = self._running.get(record_id)
+        if task is None:
+            return False
+        cancelled = bool(task.cancel())
+        if task.done():
+            self._running.pop(record_id, None)
+        return cancelled
+
+    def running_ids(self) -> list[str]:
+        return [rid for rid, t in self._running.items() if not t.done()]
 
     def _append_history(self, record: TaskRecord) -> None:
         self.history.append(record)
@@ -98,19 +124,25 @@ def build_default_registry(
 ) -> AgentRegistry:
     """Registry pre-loaded with the offline demo agent + any optional integrations."""
     registry = AgentRegistry(event_bus)
+    if config is None:
+        from vocalis.config import VocalisConfig
+
+        config = VocalisConfig.load()
     from vocalis.agents.echo import EchoAgent
 
     registry.register(EchoAgent(event_bus))
     try:  # optional integrations - missing deps must not be silent
         from vocalis.agents.openai_agent import OpenAIAgent
 
-        registry.register(OpenAIAgent(event_bus))
+        if not config.brain.local_only:
+            registry.register(OpenAIAgent(event_bus))
     except Exception:
         logger.debug("openai connector unavailable", exc_info=True)
     try:
         from vocalis.agents.claude_code import ClaudeCodeAgent
 
-        registry.register(ClaudeCodeAgent(event_bus))
+        if not config.brain.local_only:
+            registry.register(ClaudeCodeAgent(event_bus))
     except Exception:
         logger.debug("claude-code connector unavailable", exc_info=True)
 
